@@ -260,6 +260,7 @@ export default function QuestionCard({
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const [hasImageLoadError, setHasImageLoadError] = useState(false);
+  const [imageRetryCount, setImageRetryCount] = useState(0);
   const [imageKey, setImageKey] = useState(0);
   const [tempImageUrl, setTempImageUrl] = useState(question.config?.imageUrl || '');
   const [showImageLinkInput, setShowImageLinkInput] = useState(false);
@@ -269,6 +270,7 @@ export default function QuestionCard({
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [hasVideoLoadError, setHasVideoLoadError] = useState(false);
+  const [videoRetryCount, setVideoRetryCount] = useState(0);
   const [videoKey, setVideoKey] = useState(0);
   const [tempVideoUrl, setTempVideoUrl] = useState(
     question.config?.embedUrl || question.config?.videoUrl || ''
@@ -280,11 +282,13 @@ export default function QuestionCard({
   useEffect(() => {
     setTempImageUrl(question.config?.imageUrl || '');
     setHasImageLoadError(false);
+    setImageRetryCount(0);
   }, [question.config?.imageUrl]);
 
   useEffect(() => {
     setTempVideoUrl(question.config?.embedUrl || question.config?.videoUrl || '');
     setHasVideoLoadError(false);
+    setVideoRetryCount(0);
   }, [question.config?.videoUrl, question.config?.embedUrl]);
 
   const handleApplyImageUrl = (urlToApply?: string) => {
@@ -294,6 +298,7 @@ export default function QuestionCard({
       return;
     }
     setHasImageLoadError(false);
+    setImageRetryCount(0);
     setImageKey((k) => k + 1);
     onChange({
       config: {
@@ -306,6 +311,7 @@ export default function QuestionCard({
 
   const handleRemoveImage = () => {
     setHasImageLoadError(false);
+    setImageRetryCount(0);
     setImageError(null);
     setTempImageUrl('');
     setShowImageLinkInput(false);
@@ -325,6 +331,7 @@ export default function QuestionCard({
       return;
     }
     setHasVideoLoadError(false);
+    setVideoRetryCount(0);
     setVideoKey((k) => k + 1);
     onChange({
       config: {
@@ -338,6 +345,7 @@ export default function QuestionCard({
 
   const handleRemoveVideo = () => {
     setHasVideoLoadError(false);
+    setVideoRetryCount(0);
     setVideoError(null);
     setTempVideoUrl('');
     setShowVideoLinkInput(false);
@@ -355,12 +363,30 @@ export default function QuestionCard({
     setIsUploadingImage(true);
     setImageError(null);
     setHasImageLoadError(false);
+    setImageRetryCount(0);
     const maxMb = question.config?.maxImageSizeMb || 25;
     if (file.size > maxMb * 1024 * 1024) {
       setImageError(`Image size (${formatBytes(file.size)}) exceeds allowed limit of ${formatSizeMb(maxMb)}`);
       setIsUploadingImage(false);
       return;
     }
+
+    // Instant local preview so the user immediately sees the selected picture
+    let localBlobUrl: string | null = null;
+    try {
+      localBlobUrl = URL.createObjectURL(file);
+      onChange({
+        config: {
+          ...question.config,
+          imageUrl: localBlobUrl,
+          fileName: file.name,
+        },
+      });
+      setTempImageUrl(localBlobUrl);
+    } catch {
+      // fallback without preview if createObjectURL not supported
+    }
+
     try {
       const fd = new FormData();
       fd.append('file', file);
@@ -371,7 +397,21 @@ export default function QuestionCard({
       });
       const data = await res.json();
       if (res.ok && data.publicUrl) {
+        // Pre-verify that the image is accessible from the server before revoking local blob
+        if (typeof window !== 'undefined') {
+          await new Promise<void>((resolve) => {
+            const testImg = new window.Image();
+            testImg.onload = () => resolve();
+            testImg.onerror = () => {
+              // Wait briefly if filesystem watcher had momentary lag
+              setTimeout(resolve, 250);
+            };
+            testImg.src = `${data.publicUrl}?t=${Date.now()}`;
+          });
+        }
+
         setHasImageLoadError(false);
+        setImageRetryCount(0);
         setImageKey((k) => k + 1);
         setTempImageUrl(data.publicUrl);
         setShowImageLinkInput(false);
@@ -382,11 +422,34 @@ export default function QuestionCard({
             fileName: data.fileName,
           },
         });
+        if (localBlobUrl) {
+          try { URL.revokeObjectURL(localBlobUrl); } catch {}
+        }
       } else {
         setImageError(data.error || 'Failed to upload image');
+        if (localBlobUrl) {
+          try { URL.revokeObjectURL(localBlobUrl); } catch {}
+        }
+        onChange({
+          config: {
+            ...question.config,
+            imageUrl: undefined,
+            fileName: undefined,
+          },
+        });
       }
     } catch {
       setImageError('Failed to upload image');
+      if (localBlobUrl) {
+        try { URL.revokeObjectURL(localBlobUrl); } catch {}
+      }
+      onChange({
+        config: {
+          ...question.config,
+          imageUrl: undefined,
+          fileName: undefined,
+        },
+      });
     } finally {
       setIsUploadingImage(false);
     }
@@ -396,12 +459,28 @@ export default function QuestionCard({
     setIsUploadingVideo(true);
     setVideoError(null);
     setHasVideoLoadError(false);
+    setVideoRetryCount(0);
     const maxMb = question.config?.maxVideoSizeMb || 50;
     if (file.size > maxMb * 1024 * 1024) {
       setVideoError(`Video size (${formatBytes(file.size)}) exceeds allowed limit of ${formatSizeMb(maxMb)}`);
       setIsUploadingVideo(false);
       return;
     }
+
+    let localBlobUrl: string | null = null;
+    try {
+      localBlobUrl = URL.createObjectURL(file);
+      onChange({
+        config: {
+          ...question.config,
+          videoUrl: localBlobUrl,
+          embedUrl: localBlobUrl,
+          fileName: file.name,
+        },
+      });
+      setTempVideoUrl(localBlobUrl);
+    } catch {}
+
     try {
       const fd = new FormData();
       fd.append('file', file);
@@ -413,6 +492,7 @@ export default function QuestionCard({
       const data = await res.json();
       if (res.ok && data.publicUrl) {
         setHasVideoLoadError(false);
+        setVideoRetryCount(0);
         setVideoKey((k) => k + 1);
         setTempVideoUrl(data.publicUrl);
         setShowVideoLinkInput(false);
@@ -424,11 +504,36 @@ export default function QuestionCard({
             fileName: data.fileName,
           },
         });
+        if (localBlobUrl) {
+          try { URL.revokeObjectURL(localBlobUrl); } catch {}
+        }
       } else {
         setVideoError(data.error || 'Failed to upload video');
+        if (localBlobUrl) {
+          try { URL.revokeObjectURL(localBlobUrl); } catch {}
+        }
+        onChange({
+          config: {
+            ...question.config,
+            videoUrl: undefined,
+            embedUrl: undefined,
+            fileName: undefined,
+          },
+        });
       }
     } catch {
       setVideoError('Failed to upload video');
+      if (localBlobUrl) {
+        try { URL.revokeObjectURL(localBlobUrl); } catch {}
+      }
+      onChange({
+        config: {
+          ...question.config,
+          videoUrl: undefined,
+          embedUrl: undefined,
+          fileName: undefined,
+        },
+      });
     } finally {
       setIsUploadingVideo(false);
     }
@@ -1162,6 +1267,7 @@ export default function QuestionCard({
                         type="button"
                         onClick={() => {
                           setHasImageLoadError(false);
+                          setImageRetryCount(0);
                           setImageKey((k) => k + 1);
                         }}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
@@ -1226,13 +1332,27 @@ export default function QuestionCard({
                         <img
                           key={`${question.config.imageUrl}-${imageKey}`}
                           src={
-                            imageKey > 0
-                              ? `${question.config.imageUrl}${question.config.imageUrl.includes('?') ? '&' : '?'}v=${imageKey}`
-                              : question.config.imageUrl
+                            question.config.imageUrl.startsWith('blob:') || question.config.imageUrl.startsWith('data:')
+                              ? question.config.imageUrl
+                              : imageKey > 0
+                                ? `${question.config.imageUrl}${question.config.imageUrl.includes('?') ? '&' : '?'}v=${imageKey}`
+                                : question.config.imageUrl
                           }
                           alt={question.title || 'Block image'}
-                          onError={() => setHasImageLoadError(true)}
-                          onLoad={() => setHasImageLoadError(false)}
+                          onError={() => {
+                            if (imageRetryCount < 3) {
+                              setTimeout(() => {
+                                setImageRetryCount((c) => c + 1);
+                                setImageKey((k) => k + 1);
+                              }, 400);
+                            } else {
+                              setHasImageLoadError(true);
+                            }
+                          }}
+                          onLoad={() => {
+                            setHasImageLoadError(false);
+                            setImageRetryCount(0);
+                          }}
                           className="rounded-xl max-h-80 w-auto max-w-full object-contain border border-gray-200 dark:border-gray-800 shadow-md bg-white"
                         />
                         <a
