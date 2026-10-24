@@ -1502,6 +1502,7 @@ function PublicFormContent() {
                         <img
                           src={q.config.imageUrl}
                           alt={q.title || 'Form image'}
+                          onLoad={() => setBrokenImages((prev) => ({ ...prev, [q.id]: false }))}
                           onError={() => setBrokenImages((prev) => ({ ...prev, [q.id]: true }))}
                           className="rounded-xl max-h-96 w-auto max-w-full object-contain border border-gray-200 dark:border-gray-800 shadow-md bg-white"
                         />

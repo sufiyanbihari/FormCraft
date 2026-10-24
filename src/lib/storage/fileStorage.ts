@@ -225,16 +225,26 @@ export async function saveUploadedFile(file: File, maxSizeMb?: number): Promise<
   const fileKey = `${Date.now()}-${randomSuffix}${safeExt}`;
   const destinationPath = path.join(uploadDir, fileKey);
 
-  // Write file using streaming to support large files (500MB, 1GB, 5GB, 10GB) with minimal RAM
+  // Ensure upload directory exists
+  await fs.mkdir(uploadDir, { recursive: true });
+
+  // Write file: use arrayBuffer for files <= 50MB (fast, atomic, zero stream lock issues)
+  // and streaming only for massive files (> 50MB)
   try {
-    if (typeof file.stream === 'function') {
+    if (file.size <= 50 * 1024 * 1024 || typeof file.stream !== 'function') {
+      const bytes = await file.arrayBuffer();
+      await fs.writeFile(destinationPath, Buffer.from(bytes));
+    } else {
       const webStream = file.stream();
       const nodeReadable = Readable.fromWeb(webStream as any);
       const writeStream = fsSync.createWriteStream(destinationPath);
       await pipeline(nodeReadable, writeStream);
-    } else {
-      const bytes = await file.arrayBuffer();
-      await fs.writeFile(destinationPath, Buffer.from(bytes));
+    }
+
+    // Verify written file
+    const stat = await fs.stat(destinationPath);
+    if (stat.size === 0 && file.size > 0) {
+      throw new Error('Uploaded file was saved with 0 bytes');
     }
   } catch (writeErr: any) {
     console.error('[FileStorage] Error saving file to destination:', writeErr);
