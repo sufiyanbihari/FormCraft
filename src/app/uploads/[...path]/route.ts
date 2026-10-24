@@ -124,7 +124,21 @@ export async function GET(
       });
     }
 
-    // Full file stream (uses stream so memory is not exhausted for large files)
+    // For files <= 50MB (images, documents, audio), return direct buffer for rock-solid reliability
+    if (fileSize <= 50 * 1024 * 1024) {
+      const fileBuffer = await fs.readFile(resolvedPath);
+      return new NextResponse(fileBuffer, {
+        status: 200,
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': fileBuffer.length.toString(),
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
+      });
+    }
+
+    // Full file stream for large files (> 50MB, e.g. multi-gigabyte video)
     const readStream = fsSync.createReadStream(/*turbopackIgnore: true*/ resolvedPath);
     const webStream = Readable.toWeb(readStream) as ReadableStream;
 

@@ -44,7 +44,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { getVideoEmbedUrl, formatBytes, formatSizeMb } from '@/lib/utils';
+import { getVideoEmbedUrl, formatBytes, formatSizeMb, isLikelyImageSource, isLikelyVideoSource } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/useAuth';
 
 function isDarkColor(hexColor?: string): boolean {
@@ -107,6 +107,9 @@ function PublicFormContent() {
   const [uploadingFiles, setUploadingFiles] = useState<Record<string, boolean>>({});
   const [fileErrors, setFileErrors] = useState<Record<string, string | null>>({});
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
+  const [brokenVideos, setBrokenVideos] = useState<Record<string, boolean>>({});
+  const [brokenBanner, setBrokenBanner] = useState(false);
 
   // Dynamic Lookup & Autofill Engine State
   const [lookupDropdownOptions, setLookupDropdownOptions] = useState<
@@ -1118,11 +1121,12 @@ function PublicFormContent() {
             theme.borderRadius || 'rounded-xl'
           }`}
         >
-          {Boolean(theme.headerImageUrl && theme.headerImageUrl.trim() !== '') ? (
+          {Boolean(theme.headerImageUrl && isLikelyImageSource(theme.headerImageUrl)) && !brokenBanner ? (
             <div className="w-full overflow-hidden relative bg-white border-b border-gray-100 dark:border-gray-800">
               <img
                 src={theme.headerImageUrl!}
                 alt="Form Banner"
+                onError={() => setBrokenBanner(true)}
                 className="w-full h-auto object-cover max-h-56"
               />
             </div>
@@ -1488,11 +1492,20 @@ function PublicFormContent() {
                           ? 'items-end'
                           : 'items-center'
                     }`}>
-                      <img
-                        src={q.config.imageUrl}
-                        alt={q.title || 'Form image'}
-                        className="rounded-xl max-h-96 w-auto max-w-full object-contain border border-gray-200 dark:border-gray-800 shadow-md bg-white"
-                      />
+                      {brokenImages[q.id] || !isLikelyImageSource(q.config.imageUrl) ? (
+                        <div className="p-6 border border-dashed border-gray-300 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-400 text-xs bg-gray-50/60 dark:bg-gray-800/30 max-w-md w-full">
+                          <ImageIcon className="h-8 w-8 mb-2 text-gray-400 dark:text-gray-500" />
+                          <span className="font-semibold text-gray-600 dark:text-gray-300">Picture is currently unavailable</span>
+                          <span className="text-[11px] text-gray-400 mt-0.5">The image could not be loaded from the server</span>
+                        </div>
+                      ) : (
+                        <img
+                          src={q.config.imageUrl}
+                          alt={q.title || 'Form image'}
+                          onError={() => setBrokenImages((prev) => ({ ...prev, [q.id]: true }))}
+                          className="rounded-xl max-h-96 w-auto max-w-full object-contain border border-gray-200 dark:border-gray-800 shadow-md bg-white"
+                        />
+                      )}
                       {q.description && (
                         <p className="text-xs text-gray-500 italic mt-2 text-center max-w-md">
                           {q.description}
@@ -1521,6 +1534,15 @@ function PublicFormContent() {
                         </div>
                       );
                     }
+                    if (brokenVideos[q.id] || !isLikelyVideoSource(videoTarget)) {
+                      return (
+                        <div className="p-8 border border-dashed border-gray-300 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-400 text-xs bg-gray-50/60 dark:bg-gray-800/30 max-w-md mx-auto w-full">
+                          <Video className="h-8 w-8 mb-2 text-gray-400 dark:text-gray-500" />
+                          <span className="font-semibold text-gray-600 dark:text-gray-300">Video is currently unavailable</span>
+                          <span className="text-[11px] text-gray-400 mt-0.5">The video could not be loaded from the server</span>
+                        </div>
+                      );
+                    }
                     const parsed = getVideoEmbedUrl(videoTarget);
                     return (
                       <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-md bg-black max-w-2xl mx-auto">
@@ -1528,6 +1550,7 @@ function PublicFormContent() {
                           <video
                             src={parsed.url}
                             controls
+                            onError={() => setBrokenVideos((prev) => ({ ...prev, [q.id]: true }))}
                             className="w-full max-h-96 mx-auto"
                           />
                         ) : (

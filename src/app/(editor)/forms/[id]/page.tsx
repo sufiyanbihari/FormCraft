@@ -30,6 +30,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { Loader2, Sparkles, Check, Send } from 'lucide-react';
+import { isLikelyImageSource } from '@/lib/utils';
 
 function FormBuilderContent() {
   const params = useParams();
@@ -62,6 +63,7 @@ function FormBuilderContent() {
   const [lookupMappings, setLookupMappings] = useState<any[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [brokenBanner, setBrokenBanner] = useState(false);
 
   // Undo / Redo Command History
   const historyRef = useRef<any[]>([]);
@@ -731,11 +733,12 @@ function FormBuilderContent() {
                 }`}
               >
                 {/* Banner Image (only show if set, otherwise show sleek accent bar) */}
-                {Boolean(theme.headerImageUrl && theme.headerImageUrl.trim() !== '') ? (
+                {Boolean(theme.headerImageUrl && isLikelyImageSource(theme.headerImageUrl)) && !brokenBanner ? (
                   <div className="w-full overflow-hidden relative bg-white border-b border-gray-100 dark:border-gray-800">
                     <img
                       src={theme.headerImageUrl!}
                       alt="Header Banner"
+                      onError={() => setBrokenBanner(true)}
                       className="w-full h-auto object-cover max-h-56"
                     />
                   </div>

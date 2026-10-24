@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Input } from '@/components/ui/input';
@@ -52,8 +52,10 @@ import {
   ExternalLink,
   Database,
   Sparkles,
+  AlertTriangle,
+  AlertCircle,
 } from 'lucide-react';
-import { getVideoEmbedUrl, formatBytes, formatSizeMb } from '@/lib/utils';
+import { getVideoEmbedUrl, formatBytes, formatSizeMb, isLikelyImageSource, isLikelyVideoSource } from '@/lib/utils';
 
 export const QUESTION_TYPE_LABELS: Record<string, { label: string; icon: any }> = {
   SHORT_ANSWER: { label: 'Short answer', icon: AlignLeft },
@@ -256,13 +258,99 @@ export default function QuestionCard({
   );
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [hasImageLoadError, setHasImageLoadError] = useState(false);
+  const [tempImageUrl, setTempImageUrl] = useState(question.config?.imageUrl || '');
+  const [showImageLinkInput, setShowImageLinkInput] = useState(false);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const imageFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [hasVideoLoadError, setHasVideoLoadError] = useState(false);
+  const [tempVideoUrl, setTempVideoUrl] = useState(
+    question.config?.embedUrl || question.config?.videoUrl || ''
+  );
+  const [showVideoLinkInput, setShowVideoLinkInput] = useState(false);
+  const [isDraggingVideo, setIsDraggingVideo] = useState(false);
+  const videoFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setTempImageUrl(question.config?.imageUrl || '');
+    setHasImageLoadError(false);
+  }, [question.config?.imageUrl]);
+
+  useEffect(() => {
+    setTempVideoUrl(question.config?.embedUrl || question.config?.videoUrl || '');
+    setHasVideoLoadError(false);
+  }, [question.config?.videoUrl, question.config?.embedUrl]);
+
+  const handleApplyImageUrl = (urlToApply?: string) => {
+    const raw = (urlToApply !== undefined ? urlToApply : tempImageUrl).trim();
+    if (!raw) {
+      handleRemoveImage();
+      return;
+    }
+    setHasImageLoadError(false);
+    onChange({
+      config: {
+        ...question.config,
+        imageUrl: raw,
+      },
+    });
+    setShowImageLinkInput(false);
+  };
+
+  const handleRemoveImage = () => {
+    setHasImageLoadError(false);
+    setImageError(null);
+    setTempImageUrl('');
+    setShowImageLinkInput(false);
+    onChange({
+      config: {
+        ...question.config,
+        imageUrl: undefined,
+        fileName: undefined,
+      },
+    });
+  };
+
+  const handleApplyVideoUrl = (urlToApply?: string) => {
+    const raw = (urlToApply !== undefined ? urlToApply : tempVideoUrl).trim();
+    if (!raw) {
+      handleRemoveVideo();
+      return;
+    }
+    setHasVideoLoadError(false);
+    onChange({
+      config: {
+        ...question.config,
+        embedUrl: raw,
+        videoUrl: raw,
+      },
+    });
+    setShowVideoLinkInput(false);
+  };
+
+  const handleRemoveVideo = () => {
+    setHasVideoLoadError(false);
+    setVideoError(null);
+    setTempVideoUrl('');
+    setShowVideoLinkInput(false);
+    onChange({
+      config: {
+        ...question.config,
+        videoUrl: undefined,
+        embedUrl: undefined,
+        fileName: undefined,
+      },
+    });
+  };
 
   const handleImageUpload = async (file: File) => {
     setIsUploadingImage(true);
     setImageError(null);
-    const maxMb = question.config?.maxImageSizeMb || 10;
+    setHasImageLoadError(false);
+    const maxMb = question.config?.maxImageSizeMb || 25;
     if (file.size > maxMb * 1024 * 1024) {
       setImageError(`Image size (${formatBytes(file.size)}) exceeds allowed limit of ${formatSizeMb(maxMb)}`);
       setIsUploadingImage(false);
@@ -278,6 +366,9 @@ export default function QuestionCard({
       });
       const data = await res.json();
       if (res.ok && data.publicUrl) {
+        setHasImageLoadError(false);
+        setTempImageUrl(data.publicUrl);
+        setShowImageLinkInput(false);
         onChange({
           config: {
             ...question.config,
@@ -298,6 +389,7 @@ export default function QuestionCard({
   const handleVideoUpload = async (file: File) => {
     setIsUploadingVideo(true);
     setVideoError(null);
+    setHasVideoLoadError(false);
     const maxMb = question.config?.maxVideoSizeMb || 50;
     if (file.size > maxMb * 1024 * 1024) {
       setVideoError(`Video size (${formatBytes(file.size)}) exceeds allowed limit of ${formatSizeMb(maxMb)}`);
@@ -314,6 +406,9 @@ export default function QuestionCard({
       });
       const data = await res.json();
       if (res.ok && data.publicUrl) {
+        setHasVideoLoadError(false);
+        setTempVideoUrl(data.publicUrl);
+        setShowVideoLinkInput(false);
         onChange({
           config: {
             ...question.config,
@@ -1009,11 +1104,24 @@ export default function QuestionCard({
         {/* 13. Image Block */}
         {qType === 'IMAGE_BLOCK' && (
           <div className="space-y-4 py-2">
+            {/* Dedicated hidden file input */}
+            <input
+              ref={imageFileInputRef}
+              type="file"
+              className="sr-only"
+              accept="image/*"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleImageUpload(f);
+                e.target.value = '';
+              }}
+            />
+
             {/* Max Image Size Setting */}
             <SizeLimitControl
               label="Image Size Limit:"
-              description="Maximum allowed file size for image upload (e.g. 500MB, 1GB, 5GB, 10GB)"
-              currentMb={question.config?.maxImageSizeMb || 10}
+              description="Maximum allowed file size for image upload (e.g. 25MB, 100MB, 500MB, 1GB)"
+              currentMb={question.config?.maxImageSizeMb || 25}
               presets={[5, 10, 25, 100, 500, 1024, 5120, 10240]}
               onChange={(mb) =>
                 onChange({
@@ -1024,31 +1132,113 @@ export default function QuestionCard({
 
             {question.config?.imageUrl ? (
               <div className="space-y-3">
-                <div
-                  className={`flex ${
-                    question.config.imageAlignment === 'left'
-                      ? 'justify-start'
-                      : question.config.imageAlignment === 'right'
-                        ? 'justify-end'
-                        : 'justify-center'
-                  }`}
-                >
-                  <div className="relative group max-w-md">
-                    <img
-                      src={question.config.imageUrl}
-                      alt={question.title || 'Block image'}
-                      className="rounded-xl max-h-72 w-auto object-contain border border-gray-200 dark:border-gray-800 shadow-md bg-gray-50"
-                    />
-                    <a
-                      href={question.config.imageUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 rounded-xl flex items-center justify-center text-xs font-semibold transition-opacity gap-1"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" /> View original
-                    </a>
+                {/* When image fails to load or URL is invalid */}
+                {hasImageLoadError || !isLikelyImageSource(question.config.imageUrl) ? (
+                  <div className="p-4 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/90 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 space-y-3">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                          Picture could not be loaded
+                        </h4>
+                        <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 break-all mt-0.5">
+                          The file or link could not be found or displayed:{' '}
+                          <span className="font-mono bg-amber-100/80 dark:bg-amber-900/50 px-1.5 py-0.5 rounded text-amber-950 dark:text-amber-100 font-semibold">
+                            {question.config.imageUrl}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200 dark:border-amber-800/60">
+                      <button
+                        type="button"
+                        onClick={() => imageFileInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+                      >
+                        <Upload className="h-3.5 w-3.5" /> Upload picture from device
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemoveImage}
+                        className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium transition-colors"
+                      >
+                        Remove broken picture
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-amber-200/80 dark:border-amber-800/60">
+                      <span className="text-[11px] text-amber-800 dark:text-amber-300 font-medium shrink-0">
+                        Or fix picture URL:
+                      </span>
+                      <Input
+                        type="url"
+                        placeholder="https://example.com/picture.jpg"
+                        value={tempImageUrl}
+                        onChange={(e) => setTempImageUrl(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleApplyImageUrl();
+                          }
+                        }}
+                        className="h-8 text-xs flex-1 bg-white dark:bg-gray-900"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleApplyImageUrl()}
+                        disabled={!tempImageUrl.trim()}
+                        className="px-3 h-8 bg-amber-700 hover:bg-amber-800 disabled:opacity-40 text-white rounded-lg text-xs font-semibold transition-colors shrink-0"
+                      >
+                        Apply
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div
+                    className={`flex ${
+                      question.config.imageAlignment === 'left'
+                        ? 'justify-start'
+                        : question.config.imageAlignment === 'right'
+                          ? 'justify-end'
+                          : 'justify-center'
+                    }`}
+                  >
+                    <div className="relative group max-w-md">
+                      <img
+                        src={question.config.imageUrl}
+                        alt={question.title || 'Block image'}
+                        onError={() => setHasImageLoadError(true)}
+                        onLoad={() => setHasImageLoadError(false)}
+                        className="rounded-xl max-h-80 w-auto max-w-full object-contain border border-gray-200 dark:border-gray-800 shadow-md bg-white"
+                      />
+                      <a
+                        href={question.config.imageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 rounded-xl flex items-center justify-center text-xs font-semibold transition-opacity gap-1"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" /> View original
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Uploading progress indicator */}
+                {isUploadingImage && (
+                  <div className="p-3 rounded-xl border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center gap-2 text-purple-700 dark:text-purple-300">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-xs font-semibold">Uploading picture...</span>
+                  </div>
+                )}
+
+                {/* Upload error */}
+                {imageError && (
+                  <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>{imageError}</span>
+                  </div>
+                )}
 
                 {/* Alignment & Replace controls */}
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-gray-100 dark:border-gray-800">
@@ -1099,53 +1289,79 @@ export default function QuestionCard({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <label className="cursor-pointer">
-                      <input
-                        type="file"
-                        className="sr-only"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) handleImageUpload(f);
-                          e.target.value = '';
-                        }}
-                      />
-                      <span className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-medium">
-                        <Upload className="h-3.5 w-3.5" /> Replace image
-                      </span>
-                    </label>
+                    <button
+                      type="button"
+                      onClick={() => imageFileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-medium"
+                    >
+                      <Upload className="h-3.5 w-3.5" /> Replace picture
+                    </button>
                     <span className="text-gray-300">•</span>
                     <button
                       type="button"
-                      onClick={() =>
-                        onChange({
-                          config: { ...question.config, imageUrl: undefined, fileName: undefined },
-                        })
-                      }
+                      onClick={handleRemoveImage}
                       className="text-xs text-red-500 hover:text-red-700 font-medium"
                     >
                       Remove
                     </button>
                   </div>
                 </div>
+
+                {/* Direct Image URL input with explicit Update button */}
+                <div className="flex items-center gap-2 pt-1 border-t border-gray-100 dark:border-gray-800">
+                  <span className="text-xs text-gray-400 shrink-0">Picture URL:</span>
+                  <Input
+                    type="url"
+                    placeholder="https://example.com/picture.jpg or /uploads/..."
+                    value={tempImageUrl}
+                    onChange={(e) => setTempImageUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleApplyImageUrl();
+                      }
+                    }}
+                    className="h-8 text-xs flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleApplyImageUrl()}
+                    disabled={!tempImageUrl.trim() || tempImageUrl === question.config?.imageUrl}
+                    className="px-3 h-8 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors shrink-0"
+                  >
+                    Update
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-3">
-                <label className="border-2 border-dashed border-gray-300 dark:border-gray-700 hover:border-purple-500 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all bg-gray-50/60 dark:bg-gray-800/40 group">
-                  <input
-                    type="file"
-                    className="sr-only"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleImageUpload(f);
-                      e.target.value = '';
-                    }}
-                  />
+                {/* Drag and Drop Dropzone */}
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingImage(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    setIsDraggingImage(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingImage(false);
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) handleImageUpload(f);
+                  }}
+                  onClick={() => imageFileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all group ${
+                    isDraggingImage
+                      ? 'border-purple-600 bg-purple-50 dark:bg-purple-950/40'
+                      : 'border-gray-300 dark:border-gray-700 hover:border-purple-500 bg-gray-50/60 dark:bg-gray-800/40'
+                  }`}
+                >
                   {isUploadingImage ? (
                     <div className="flex flex-col items-center gap-2 text-purple-600 py-2">
                       <Loader2 className="h-7 w-7 animate-spin" />
-                      <span className="text-xs font-semibold">Uploading image...</span>
+                      <span className="text-xs font-semibold">Uploading picture...</span>
                     </div>
                   ) : (
                     <>
@@ -1153,32 +1369,45 @@ export default function QuestionCard({
                         <ImageIcon className="h-6 w-6" />
                       </div>
                       <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
-                        Click to upload an image (Max {formatSizeMb(question.config?.maxImageSizeMb || 10)})
+                        Drag & drop or click to upload picture (Max {formatSizeMb(question.config?.maxImageSizeMb || 25)})
                       </span>
                       <span className="text-[11px] text-gray-400 mt-0.5">
-                        PNG, JPG, WebP, GIF supported
+                        PNG, JPG, WebP, GIF, SVG supported
                       </span>
                     </>
                   )}
-                </label>
+                </div>
 
                 {imageError && (
-                  <p className="text-xs text-red-500 font-medium">{imageError}</p>
+                  <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>{imageError}</span>
+                  </div>
                 )}
 
                 <div className="flex items-center gap-2 pt-1">
-                  <span className="text-xs text-gray-400 shrink-0">Or image URL:</span>
+                  <span className="text-xs text-gray-400 shrink-0">Or paste picture URL:</span>
                   <Input
                     type="url"
-                    placeholder="https://example.com/image.jpg"
-                    value={question.config?.imageUrl || ''}
-                    onChange={(e) =>
-                      onChange({
-                        config: { ...question.config, imageUrl: e.target.value },
-                      })
-                    }
+                    placeholder="https://example.com/picture.jpg"
+                    value={tempImageUrl}
+                    onChange={(e) => setTempImageUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleApplyImageUrl();
+                      }
+                    }}
                     className="h-8 text-xs flex-1"
                   />
+                  <button
+                    type="button"
+                    onClick={() => handleApplyImageUrl()}
+                    disabled={!tempImageUrl.trim()}
+                    className="px-3 h-8 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors shrink-0"
+                  >
+                    Insert
+                  </button>
                 </div>
               </div>
             )}
@@ -1188,10 +1417,23 @@ export default function QuestionCard({
         {/* 14. Video Block & Embed */}
         {qType === 'VIDEO_EMBED' && (
           <div className="space-y-4 py-2">
+            {/* Dedicated hidden file input */}
+            <input
+              ref={videoFileInputRef}
+              type="file"
+              className="sr-only"
+              accept="video/*"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleVideoUpload(f);
+                e.target.value = '';
+              }}
+            />
+
             {/* Max Video Size Setting */}
             <SizeLimitControl
               label="Video Upload Limit:"
-              description="Maximum allowed file size for video uploads (e.g. 500MB, 800MB, 1GB, 5GB, 10GB)"
+              description="Maximum allowed file size for video uploads (e.g. 50MB, 100MB, 500MB, 1GB)"
               currentMb={question.config?.maxVideoSizeMb || 50}
               presets={[25, 50, 100, 500, 1024, 2048, 5120, 10240]}
               onChange={(mb) =>
@@ -1203,79 +1445,184 @@ export default function QuestionCard({
 
             {question.config?.videoUrl || question.config?.embedUrl ? (
               <div className="space-y-3">
-                {(() => {
-                  const videoTarget = question.config?.videoUrl || question.config?.embedUrl || '';
-                  const parsed = getVideoEmbedUrl(videoTarget);
-                  return (
-                    <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-md bg-black">
-                      {parsed?.isDirectVideo ? (
-                        <video
-                          src={parsed.url}
-                          controls
-                          className="w-full max-h-80 mx-auto"
-                        />
-                      ) : (
-                        <iframe
-                          src={parsed?.url || videoTarget}
-                          className="w-full aspect-video"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
-                      )}
+                {/* When video fails to load or URL is invalid */}
+                {hasVideoLoadError || !isLikelyVideoSource(question.config?.videoUrl || question.config?.embedUrl) ? (
+                  <div className="p-4 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/90 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 space-y-3">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                          Video could not be loaded
+                        </h4>
+                        <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 break-all mt-0.5">
+                          The video file or URL could not be loaded:{' '}
+                          <span className="font-mono bg-amber-100/80 dark:bg-amber-900/50 px-1.5 py-0.5 rounded text-amber-950 dark:text-amber-100 font-semibold">
+                            {question.config?.videoUrl || question.config?.embedUrl}
+                          </span>
+                        </p>
+                      </div>
                     </div>
-                  );
-                })()}
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200 dark:border-amber-800/60">
+                      <button
+                        type="button"
+                        onClick={() => videoFileInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+                      >
+                        <Upload className="h-3.5 w-3.5" /> Upload video from device
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemoveVideo}
+                        className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium transition-colors"
+                      >
+                        Remove broken video
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-amber-200/80 dark:border-amber-800/60">
+                      <span className="text-[11px] text-amber-800 dark:text-amber-300 font-medium shrink-0">
+                        Or fix video URL:
+                      </span>
+                      <Input
+                        type="url"
+                        placeholder="YouTube, Vimeo, or direct video link"
+                        value={tempVideoUrl}
+                        onChange={(e) => setTempVideoUrl(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleApplyVideoUrl();
+                          }
+                        }}
+                        className="h-8 text-xs flex-1 bg-white dark:bg-gray-900"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleApplyVideoUrl()}
+                        disabled={!tempVideoUrl.trim()}
+                        className="px-3 h-8 bg-amber-700 hover:bg-amber-800 disabled:opacity-40 text-white rounded-lg text-xs font-semibold transition-colors shrink-0"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  (() => {
+                    const videoTarget = question.config?.videoUrl || question.config?.embedUrl || '';
+                    const parsed = getVideoEmbedUrl(videoTarget);
+                    return (
+                      <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-md bg-black">
+                        {parsed?.isDirectVideo ? (
+                          <video
+                            src={parsed.url}
+                            controls
+                            onError={() => setHasVideoLoadError(true)}
+                            className="w-full max-h-80 mx-auto"
+                          />
+                        ) : (
+                          <iframe
+                            src={parsed?.url || videoTarget}
+                            className="w-full aspect-video"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        )}
+                      </div>
+                    );
+                  })()
+                )}
+
+                {/* Uploading progress indicator */}
+                {isUploadingVideo && (
+                  <div className="p-3 rounded-xl border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center gap-2 text-purple-700 dark:text-purple-300">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-xs font-semibold">Uploading video...</span>
+                  </div>
+                )}
+
+                {/* Video upload error */}
+                {videoError && (
+                  <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>{videoError}</span>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between pt-1">
                   <div className="flex items-center gap-2">
-                    <label className="cursor-pointer">
-                      <input
-                        type="file"
-                        className="sr-only"
-                        accept="video/*"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) handleVideoUpload(f);
-                          e.target.value = '';
-                        }}
-                      />
-                      <span className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-semibold">
-                        <Upload className="h-3.5 w-3.5" /> Replace video file
-                      </span>
-                    </label>
+                    <button
+                      type="button"
+                      onClick={() => videoFileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-semibold"
+                    >
+                      <Upload className="h-3.5 w-3.5" /> Replace video file
+                    </button>
                     <span className="text-gray-300">•</span>
                     <button
                       type="button"
-                      onClick={() =>
-                        onChange({
-                          config: {
-                            ...question.config,
-                            videoUrl: undefined,
-                            embedUrl: undefined,
-                            fileName: undefined,
-                          },
-                        })
-                      }
+                      onClick={handleRemoveVideo}
                       className="text-xs text-red-500 hover:text-red-700 font-medium"
                     >
                       Remove
                     </button>
                   </div>
                 </div>
+
+                {/* Direct Video URL input */}
+                <div className="flex items-center gap-2 pt-1 border-t border-gray-100 dark:border-gray-800">
+                  <span className="text-xs text-gray-400 shrink-0">Video URL:</span>
+                  <Input
+                    type="url"
+                    placeholder="YouTube, Vimeo, or direct video link"
+                    value={tempVideoUrl}
+                    onChange={(e) => setTempVideoUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleApplyVideoUrl();
+                      }
+                    }}
+                    className="h-8 text-xs flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleApplyVideoUrl()}
+                    disabled={
+                      !tempVideoUrl.trim() ||
+                      tempVideoUrl === (question.config?.embedUrl || question.config?.videoUrl)
+                    }
+                    className="px-3 h-8 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors shrink-0"
+                  >
+                    Update
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-3">
-                <label className="border-2 border-dashed border-gray-300 dark:border-gray-700 hover:border-purple-500 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all bg-gray-50/60 dark:bg-gray-800/40 group">
-                  <input
-                    type="file"
-                    className="sr-only"
-                    accept="video/*"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleVideoUpload(f);
-                      e.target.value = '';
-                    }}
-                  />
+                {/* Drag and drop dropzone for video */}
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingVideo(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    setIsDraggingVideo(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingVideo(false);
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) handleVideoUpload(f);
+                  }}
+                  onClick={() => videoFileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all group ${
+                    isDraggingVideo
+                      ? 'border-purple-600 bg-purple-50 dark:bg-purple-950/40'
+                      : 'border-gray-300 dark:border-gray-700 hover:border-purple-500 bg-gray-50/60 dark:bg-gray-800/40'
+                  }`}
+                >
                   {isUploadingVideo ? (
                     <div className="flex flex-col items-center gap-2 text-purple-600 py-2">
                       <Loader2 className="h-7 w-7 animate-spin" />
@@ -1287,17 +1634,20 @@ export default function QuestionCard({
                         <Video className="h-6 w-6" />
                       </div>
                       <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
-                        Click to upload a video (Max {formatSizeMb(question.config?.maxVideoSizeMb || 50)})
+                        Drag & drop or click to upload video (Max {formatSizeMb(question.config?.maxVideoSizeMb || 50)})
                       </span>
                       <span className="text-[11px] text-gray-400 mt-0.5">
                         MP4, WebM, MOV supported
                       </span>
                     </>
                   )}
-                </label>
+                </div>
 
                 {videoError && (
-                  <p className="text-xs text-red-500 font-medium">{videoError}</p>
+                  <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>{videoError}</span>
+                  </div>
                 )}
 
                 <div className="flex items-center gap-2 pt-1">
@@ -1305,18 +1655,24 @@ export default function QuestionCard({
                   <Input
                     type="url"
                     placeholder="YouTube, Vimeo, or direct video link"
-                    value={question.config?.embedUrl || question.config?.videoUrl || ''}
-                    onChange={(e) =>
-                      onChange({
-                        config: {
-                          ...question.config,
-                          embedUrl: e.target.value,
-                          videoUrl: e.target.value,
-                        },
-                      })
-                    }
+                    value={tempVideoUrl}
+                    onChange={(e) => setTempVideoUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleApplyVideoUrl();
+                      }
+                    }}
                     className="h-8 text-xs flex-1"
                   />
+                  <button
+                    type="button"
+                    onClick={() => handleApplyVideoUrl()}
+                    disabled={!tempVideoUrl.trim()}
+                    className="px-3 h-8 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors shrink-0"
+                  >
+                    Insert
+                  </button>
                 </div>
               </div>
             )}
