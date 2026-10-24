@@ -1,0 +1,415 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum FormStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+  TRASHED
+}
+
+enum AccessMode {
+  PUBLIC
+  AUTHENTICATED
+  RESTRICTED
+}
+
+enum CollaboratorRole {
+  OWNER
+  EDITOR
+  VIEWER
+  ANALYST
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String
+  role          UserRole  @default(USER)
+  avatarUrl     String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  forms         Form[]
+  sessions      Session[]
+  collaborations FormCollaborator[]
+  submissions   FormSubmission[]
+  uploadedFiles UploadedFile[]
+  auditLogs     FormAuditLog[]
+
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Form {
+  id                 String     @id @default(cuid())
+  publicId           String     @unique @default(cuid())
+  title              String     @default("Untitled form")
+  description        String?    @default("")
+  status             FormStatus @default(DRAFT)
+  ownerId            String
+  isQuiz             Boolean    @default(false)
+  publishedVersionId String?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  owner         User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  theme         FormTheme?
+  settings      FormSettings?
+  sections      FormSection[]
+  questions     FormQuestion[]
+  versions      FormVersion[]
+  submissions   FormSubmission[]
+  collaborators FormCollaborator[]
+  invitations   FormInvitation[]
+  auditLogs     FormAuditLog[]
+  uploadedFiles UploadedFile[]
+  lookupDatasets FormLookupDataset[]
+  lookupMappings FormLookupMapping[]
+
+  @@index([ownerId])
+  @@index([publicId])
+  @@index([status])
+  @@map("forms")
+}
+
+model FormTheme {
+  id              String   @id @default(cuid())
+  formId          String   @unique
+  primaryColor    String   @default("#673ab7") // Classic purple default
+  backgroundColor String   @default("#f0ebf8")
+  cardColor       String   @default("#ffffff")
+  fontFamily      String   @default("Inter")
+  headerImageUrl  String?
+  logoUrl         String?
+  borderRadius    String   @default("rounded-xl")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@map("form_themes")
+}
+
+model FormSettings {
+  id                       String     @id @default(cuid())
+  formId                   String     @unique
+  isAcceptingResponses     Boolean    @default(true)
+  startDate                DateTime?
+  endDate                  DateTime?
+  maxResponses             Int?
+  closedMessage            String?    @default("This form is no longer accepting responses.")
+  showProgressBar          Boolean    @default(true)
+  shuffleQuestions         Boolean    @default(false)
+  confirmationMessage      String     @default("Your response has been recorded.")
+  allowMultipleSubmissions Boolean    @default(true)
+  requireAuth              Boolean    @default(false)
+  collectEmail             Boolean    @default(false)
+  restrictOneResponse      Boolean    @default(false)
+  allowResponseEditing     Boolean    @default(false)
+  showSummaryToRespondents Boolean    @default(false)
+  accessMode               AccessMode @default(PUBLIC)
+  createdAt                DateTime   @default(now())
+  updatedAt                DateTime   @updatedAt
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@map("form_settings")
+}
+
+model FormSection {
+  id            String   @id @default(cuid())
+  formId        String
+  title         String   @default("Section")
+  description   String?  @default("")
+  orderIndex    Int      @default(0)
+  nextSectionId String?  @default("NEXT") // "NEXT", "SUBMIT", or specific sectionId
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  form      Form           @relation(fields: [formId], references: [id], onDelete: Cascade)
+  questions FormQuestion[]
+
+  @@index([formId, orderIndex])
+  @@map("form_sections")
+}
+
+model FormQuestion {
+  id              String   @id @default(cuid())
+  formId          String
+  sectionId       String
+  title           String   @default("Question")
+  description     String?  @default("")
+  type            String   @default("SHORT_ANSWER")
+  orderIndex      Int      @default(0)
+  isRequired      Boolean  @default(false)
+  validation      Json?    @default("{}")
+  config          Json?    @default("{}")
+  quizPoints      Int      @default(0)
+  quizAnswer      Json?    @default("{}")
+  quizExplanation String?  @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  form             Form               @relation(fields: [formId], references: [id], onDelete: Cascade)
+  section          FormSection        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  options          QuestionOption[]
+  submissionAnswers SubmissionAnswer[]
+
+  @@index([formId, orderIndex])
+  @@index([sectionId])
+  @@map("form_questions")
+}
+
+model QuestionOption {
+  id             String   @id @default(cuid())
+  questionId     String
+  label          String
+  value          String
+  orderIndex     Int      @default(0)
+  isOther        Boolean  @default(false)
+  goToSectionId  String?  // null = continue to next, or specific sectionId, or "SUBMIT"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  question FormQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId, orderIndex])
+  @@map("question_options")
+}
+
+model FormVersion {
+  id                 String   @id @default(cuid())
+  formId             String
+  versionNumber      Int
+  snapshotJson       Json
+  publishedAt        DateTime @default(now())
+  publishedByUserId  String?
+
+  form        Form             @relation(fields: [formId], references: [id], onDelete: Cascade)
+  submissions FormSubmission[]
+
+  @@unique([formId, versionNumber])
+  @@index([formId])
+  @@map("form_versions")
+}
+
+model FormSubmission {
+  id               String    @id @default(cuid())
+  formId           String
+  formVersionId    String?
+  respondentUserId String?
+  respondentEmail  String?
+  editToken        String    @unique @default(cuid())
+  ipHash           String?
+  idempotencyKey   String?   @unique
+  submittedAt      DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  isComplete       Boolean   @default(true)
+  totalScore       Float?
+  maxScore         Float?
+
+  form        Form               @relation(fields: [formId], references: [id], onDelete: Cascade)
+  version     FormVersion?       @relation(fields: [formVersionId], references: [id], onDelete: SetNull)
+  respondent  User?              @relation(fields: [respondentUserId], references: [id], onDelete: SetNull)
+  answers     SubmissionAnswer[]
+  files       UploadedFile[]
+  cattleOwners CattleOwnerEntry[]
+
+  @@index([formId, submittedAt])
+  @@index([respondentUserId])
+  @@index([editToken])
+  @@map("form_submissions")
+}
+
+model CattleOwnerEntry {
+  id               String   @id @default(cuid())
+  submissionId     String
+  orderIndex       Int      @default(0)
+  ownerName        String
+  ownerMobile      String
+  largeCattleCount Int      @default(0)
+  smallCattleCount Int      @default(0)
+  flooringType     String
+  supplyDung       String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId, orderIndex])
+  @@map("cattle_owner_entries")
+}
+
+model SubmissionAnswer {
+  id           String   @id @default(cuid())
+  submissionId String
+  questionId   String
+  value        Json     // typed JSON (string, string[], object for grid, file metadata, etc.)
+  textAnswer   String?
+  score        Float?
+  isCorrect    Boolean?
+  createdAt    DateTime @default(now())
+
+  submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  question   FormQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, questionId])
+  @@index([submissionId])
+  @@index([questionId])
+  @@map("submission_answers")
+}
+
+model FormCollaborator {
+  id        String           @id @default(cuid())
+  formId    String
+  userId    String
+  role      CollaboratorRole @default(VIEWER)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, userId])
+  @@index([userId])
+  @@map("form_collaborators")
+}
+
+model FormInvitation {
+  id        String           @id @default(cuid())
+  formId    String
+  email     String
+  role      CollaboratorRole @default(EDITOR)
+  token     String           @unique @default(cuid())
+  expiresAt DateTime
+  createdAt DateTime         @default(now())
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
+  @@index([token])
+  @@map("form_invitations")
+}
+
+model UploadedFile {
+  id               String   @id @default(cuid())
+  formId           String?
+  submissionId     String?
+  fileName         String
+  fileKey          String   @unique
+  fileSize         Int
+  mimeType         String
+  publicUrl        String
+  uploadedByUserId String?
+  createdAt        DateTime @default(now())
+
+  form       Form?           @relation(fields: [formId], references: [id], onDelete: SetNull)
+  submission FormSubmission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+  user       User?           @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([formId])
+  @@index([submissionId])
+  @@map("uploaded_files")
+}
+
+model FormAuditLog {
+  id        String   @id @default(cuid())
+  formId    String?
+  userId    String?
+  action    String
+  details   Json?    @default("{}")
+  createdAt DateTime @default(now())
+
+  form Form? @relation(fields: [formId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([formId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
+  @@map("form_audit_logs")
+}
+
+model FormLookupDataset {
+  id        String   @id @default(cuid())
+  formId    String
+  fileName  String
+  fileSize  Int
+  rowCount  Int
+  columns   String[]
+  version   Int      @default(1)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  form     Form                @relation(fields: [formId], references: [id], onDelete: Cascade)
+  records  FormLookupRecord[]
+  mappings FormLookupMapping[]
+
+  @@index([formId])
+  @@index([formId, isActive])
+  @@map("form_lookup_datasets")
+}
+
+model FormLookupRecord {
+  id         String   @id @default(cuid())
+  datasetId  String
+  key        String   // normalized search key (trimmed, lowercased)
+  displayKey String   // raw original key as displayed in dropdown / input
+  data       Json     // full row dictionary: { [column]: value }
+  rowIndex   Int
+  createdAt  DateTime @default(now())
+
+  dataset FormLookupDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@index([datasetId, key])
+  @@index([datasetId, rowIndex])
+  @@map("form_lookup_records")
+}
+
+model FormLookupMapping {
+  id                String   @id @default(cuid())
+  formId            String
+  datasetId         String
+  triggerQuestionId String
+  lookupType        String   @default("DROPDOWN") // "DROPDOWN" | "TEXT_KEY"
+  keyColumn         String
+  noMatchMessage    String?  @default("No matching record found.")
+  mappings          Json     @default("[]") // [{ column: string, targetQuestionId: string, isReadOnly: boolean }]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  form    Form              @relation(fields: [formId], references: [id], onDelete: Cascade)
+  dataset FormLookupDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
+  @@index([datasetId])
+  @@index([formId, triggerQuestionId])
+  @@map("form_lookup_mappings")
+}
