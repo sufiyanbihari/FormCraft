@@ -72,3 +72,26 @@ export function getVideoEmbedUrl(url?: string): { isDirectVideo: boolean; url: s
 
   return { isDirectVideo: false, url: trimmed };
 }
+
+/**
+ * Formats a megabyte value into a readable string (e.g. 500 MB, 1 GB, 5 GB, 10 GB)
+ */
+export function formatSizeMb(mb: number): string {
+  if (!mb || mb <= 0) return '10 MB';
+  if (mb >= 1024) {
+    const gb = mb / 1024;
+    return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`;
+  }
+  return `${mb} MB`;
+}
+
+/**
+ * Formats a byte number into a human-readable string (e.g. 429.2 MB, 1.2 GB)
+ */
+export function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}

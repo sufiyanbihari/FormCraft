@@ -44,7 +44,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { getVideoEmbedUrl } from '@/lib/utils';
+import { getVideoEmbedUrl, formatBytes, formatSizeMb } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/useAuth';
 
 function isDarkColor(hexColor?: string): boolean {
@@ -468,7 +468,7 @@ function PublicFormContent() {
     setFileErrors((prev) => ({ ...prev, [qId]: null }));
 
     if (file.size > maxBytes) {
-      const msg = `File "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds maximum allowed size of ${maxMb} MB.`;
+      const msg = `File "${file.name}" (${formatBytes(file.size)}) exceeds maximum allowed size of ${formatSizeMb(maxMb)}.`;
       console.warn('[FormCraft File Upload] Size limit exceeded:', msg);
       setFileErrors((prev) => ({ ...prev, [qId]: msg }));
       if (targetInput) targetInput.value = '';
@@ -2109,7 +2109,7 @@ function PublicFormContent() {
                             Tap to choose file or photo
                           </span>
                           <span className="text-[11px] text-gray-500 mt-1">
-                            Max size limit: {q.config?.maxFileSizeMb || 10} MB
+                            Max size limit: {formatSizeMb(q.config?.maxFileSizeMb || 10)}
                           </span>
                           {q.config?.allowedFileTypes && q.config.allowedFileTypes.length > 0 ? (
                             <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium mt-1">

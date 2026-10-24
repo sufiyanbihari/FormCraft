@@ -5,6 +5,7 @@ import { getAuthUserFromRequest } from '@/lib/auth/session';
 import { logActivity } from '@/lib/audit/auditLogger';
 import { findLookupRecord } from '@/lib/lookup/lookupService';
 import { FieldMapping } from '@/lib/lookup/lookupTypes';
+import { formatSizeMb } from '@/lib/utils';
 import crypto from 'crypto';
 
 export async function POST(
@@ -246,7 +247,7 @@ export async function POST(
             const maxMb = config.maxFileSizeMb || 10;
             if (val.fileSize && val.fileSize > maxMb * 1024 * 1024) {
               return NextResponse.json(
-                { error: `File uploaded for "${q.title}" exceeds maximum allowed limit of ${maxMb}MB.` },
+                { error: `File uploaded for "${q.title}" exceeds maximum allowed limit of ${formatSizeMb(maxMb)}.` },
                 { status: 400 }
               );
             }

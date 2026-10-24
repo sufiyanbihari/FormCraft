@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
     'localhost:3000',
     '127.0.0.1:3000',
   ],
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10gb',
+    },
+  },
   turbopack: {
     rules: {
       "*.css": {

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
+import os from 'os';
+import { Readable } from 'stream';
+import { PRIMARY_UPLOAD_DIR, FALLBACK_UPLOAD_DIR } from '@/lib/storage/fileStorage';
 
 const MIME_MAP: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -57,25 +61,84 @@ export async function GET(
 
     // Sanitize path to prevent directory traversal
     const safeFilename = path.basename(pathSegments.join('/'));
-    const filePath = path.join(process.cwd(), 'public', 'uploads', safeFilename);
 
-    try {
-      const fileBuffer = await fs.readFile(filePath);
-      const ext = path.extname(safeFilename).toLowerCase();
-      const contentType = MIME_MAP[ext] || 'application/octet-stream';
+    // Check candidate storage directories
+    const candidatePaths = [
+      path.join(PRIMARY_UPLOAD_DIR, safeFilename),
+      path.join(FALLBACK_UPLOAD_DIR, safeFilename),
+    ];
 
-      return new NextResponse(fileBuffer, {
-        status: 200,
+    let resolvedPath: string | null = null;
+    let fileStat: fsSync.Stats | null = null;
+
+    for (const cp of candidatePaths) {
+      try {
+        const stat = await fs.stat(cp);
+        if (stat.isFile()) {
+          resolvedPath = cp;
+          fileStat = stat;
+          break;
+        }
+      } catch {
+        // try next
+      }
+    }
+
+    if (!resolvedPath || !fileStat) {
+      return new NextResponse('File not found', { status: 404 });
+    }
+
+    const ext = path.extname(safeFilename).toLowerCase();
+    const contentType = MIME_MAP[ext] || 'application/octet-stream';
+    const fileSize = fileStat.size;
+
+    // Support HTTP Range requests (crucial for video/audio seeking and streaming large media)
+    const rangeHeader = request.headers.get('range');
+    if (rangeHeader && rangeHeader.startsWith('bytes=')) {
+      const parts = rangeHeader.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      if (start >= fileSize || end >= fileSize || start > end) {
+        return new NextResponse(null, {
+          status: 416,
+          headers: {
+            'Content-Range': `bytes */${fileSize}`,
+          },
+        });
+      }
+
+      const chunkSize = end - start + 1;
+      const readStream = fsSync.createReadStream(/*turbopackIgnore: true*/ resolvedPath, { start, end });
+      const webStream = Readable.toWeb(readStream) as ReadableStream;
+
+      return new NextResponse(webStream, {
+        status: 206,
         headers: {
           'Content-Type': contentType,
-          'Content-Length': fileBuffer.length.toString(),
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunkSize.toString(),
           'Cache-Control': 'public, max-age=31536000, immutable',
         },
       });
-    } catch {
-      return new NextResponse('File not found', { status: 404 });
     }
+
+    // Full file stream (uses stream so memory is not exhausted for large files)
+    const readStream = fsSync.createReadStream(/*turbopackIgnore: true*/ resolvedPath);
+    const webStream = Readable.toWeb(readStream) as ReadableStream;
+
+    return new NextResponse(webStream, {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': fileSize.toString(),
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      },
+    });
   } catch (err: any) {
+    console.error('Failed to serve uploaded file:', err);
     return new NextResponse('Internal server error', { status: 500 });
   }
 }

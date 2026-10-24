@@ -4,6 +4,8 @@ import { getAuthUserFromRequest } from '@/lib/auth/session';
 import { saveUploadedFile } from '@/lib/storage/fileStorage';
 import { logActivity } from '@/lib/audit/auditLogger';
 
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();

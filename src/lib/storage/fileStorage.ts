@@ -1,15 +1,47 @@
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import os from 'os';
+import { pipeline } from 'stream/promises';
+import { Readable } from 'stream';
+import { formatBytes, formatSizeMb } from '@/lib/utils';
 
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
+export const PRIMARY_UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
+export const FALLBACK_UPLOAD_DIR = path.join(os.tmpdir(), 'formcraft-uploads');
 
-// Ensure upload directory exists
-async function ensureUploadDir() {
+let cachedUploadDir: string | null = null;
+
+export async function getEffectiveUploadDir(): Promise<string> {
+  if (cachedUploadDir) {
+    try {
+      await fs.access(cachedUploadDir);
+      return cachedUploadDir;
+    } catch {
+      cachedUploadDir = null;
+    }
+  }
+
+  // 1. Try primary public/uploads directory
   try {
-    await fs.mkdir(UPLOAD_DIR, { recursive: true });
+    await fs.mkdir(PRIMARY_UPLOAD_DIR, { recursive: true });
+    const probe = path.join(PRIMARY_UPLOAD_DIR, `.write-probe-${Date.now()}`);
+    await fs.writeFile(probe, 'ok');
+    await fs.unlink(probe);
+    cachedUploadDir = PRIMARY_UPLOAD_DIR;
+    return PRIMARY_UPLOAD_DIR;
   } catch (err) {
-    console.error('Failed to create upload directory:', err);
+    console.warn('[FileStorage] Primary upload dir unavailable/read-only, using fallback tmp directory:', err);
+  }
+
+  // 2. Fallback to os.tmpdir()/formcraft-uploads (writable in all serverless/container environments)
+  try {
+    await fs.mkdir(FALLBACK_UPLOAD_DIR, { recursive: true });
+    cachedUploadDir = FALLBACK_UPLOAD_DIR;
+    return FALLBACK_UPLOAD_DIR;
+  } catch (err) {
+    console.error('[FileStorage] Failed to initialize fallback upload directory:', err);
+    throw new Error('Upload directory is not writable on this system');
   }
 }
 
@@ -140,7 +172,7 @@ const ALLOWED_MIME_TYPES = new Set([
   'application/gzip',
 ]);
 
-const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB max default limit
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024 * 1024; // 50 GB system maximum limit
 
 export interface SaveFileResult {
   fileKey: string;
@@ -151,11 +183,12 @@ export interface SaveFileResult {
 }
 
 export async function saveUploadedFile(file: File, maxSizeMb?: number): Promise<SaveFileResult> {
-  await ensureUploadDir();
+  const uploadDir = await getEffectiveUploadDir();
 
-  const maxAllowedBytes = (maxSizeMb ? maxSizeMb : 100) * 1024 * 1024;
+  const effectiveMaxMb = maxSizeMb && maxSizeMb > 0 ? maxSizeMb : 10240;
+  const maxAllowedBytes = effectiveMaxMb * 1024 * 1024;
   if (file.size > maxAllowedBytes) {
-    throw new Error(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds maximum allowed limit of ${maxSizeMb || 100}MB`);
+    throw new Error(`File size (${formatBytes(file.size)}) exceeds maximum allowed limit of ${formatSizeMb(effectiveMaxMb)}`);
   }
 
   const sanitizedOriginalName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -178,21 +211,36 @@ export async function saveUploadedFile(file: File, maxSizeMb?: number): Promise<
     else if (effectiveMimeType.includes('png')) safeExt = '.png';
     else if (effectiveMimeType.includes('pdf')) safeExt = '.pdf';
     else if (effectiveMimeType.includes('webp')) safeExt = '.webp';
+    else if (effectiveMimeType.includes('mp4')) safeExt = '.mp4';
+    else if (effectiveMimeType.includes('webm')) safeExt = '.webm';
+    else if (effectiveMimeType.includes('quicktime')) safeExt = '.mov';
     else if (effectiveMimeType.includes('heic') || effectiveMimeType.includes('heif')) safeExt = '.heic';
     else if (effectiveMimeType.includes('word') || effectiveMimeType.includes('officedocument')) safeExt = '.docx';
     else if (effectiveMimeType.includes('text/plain')) safeExt = '.txt';
     else safeExt = '.bin';
   }
 
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-
   // Generate randomized unguessable file key
   const randomSuffix = crypto.randomBytes(16).toString('hex');
   const fileKey = `${Date.now()}-${randomSuffix}${safeExt}`;
+  const destinationPath = path.join(uploadDir, fileKey);
 
-  const destinationPath = path.join(UPLOAD_DIR, fileKey);
-  await fs.writeFile(destinationPath, buffer);
+  // Write file using streaming to support large files (500MB, 1GB, 5GB, 10GB) with minimal RAM
+  try {
+    if (typeof file.stream === 'function') {
+      const webStream = file.stream();
+      const nodeReadable = Readable.fromWeb(webStream as any);
+      const writeStream = fsSync.createWriteStream(destinationPath);
+      await pipeline(nodeReadable, writeStream);
+    } else {
+      const bytes = await file.arrayBuffer();
+      await fs.writeFile(destinationPath, Buffer.from(bytes));
+    }
+  } catch (writeErr: any) {
+    console.error('[FileStorage] Error saving file to destination:', writeErr);
+    try { await fs.unlink(destinationPath); } catch {}
+    throw new Error(`Failed to save uploaded file: ${writeErr?.message || 'I/O error'}`);
+  }
 
   const publicUrl = `/uploads/${fileKey}`;
 
@@ -206,11 +254,18 @@ export async function saveUploadedFile(file: File, maxSizeMb?: number): Promise<
 }
 
 export async function deleteUploadedFile(fileKey: string): Promise<boolean> {
-  try {
-    const filePath = path.join(UPLOAD_DIR, path.basename(fileKey));
-    await fs.unlink(filePath);
-    return true;
-  } catch {
-    return false;
+  const safeFilename = path.basename(fileKey);
+  const candidates = [
+    path.join(PRIMARY_UPLOAD_DIR, safeFilename),
+    path.join(FALLBACK_UPLOAD_DIR, safeFilename),
+  ];
+  for (const candidate of candidates) {
+    try {
+      await fs.unlink(candidate);
+      return true;
+    } catch {
+      // try next location
+    }
   }
+  return false;
 }

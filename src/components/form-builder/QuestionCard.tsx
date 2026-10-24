@@ -53,7 +53,7 @@ import {
   Database,
   Sparkles,
 } from 'lucide-react';
-import { getVideoEmbedUrl } from '@/lib/utils';
+import { getVideoEmbedUrl, formatBytes, formatSizeMb } from '@/lib/utils';
 
 export const QUESTION_TYPE_LABELS: Record<string, { label: string; icon: any }> = {
   SHORT_ANSWER: { label: 'Short answer', icon: AlignLeft },
@@ -116,6 +116,125 @@ interface QuestionCardProps {
   onOpenLookup?: () => void;
 }
 
+interface SizeLimitControlProps {
+  label: string;
+  description: string;
+  currentMb: number;
+  presets: number[];
+  onChange: (newMb: number) => void;
+}
+
+function SizeLimitControl({
+  label,
+  description,
+  currentMb,
+  presets,
+  onChange,
+}: SizeLimitControlProps) {
+  const isGb = currentMb >= 1024 && currentMb % 1024 === 0;
+  const [unit, setUnit] = useState<'MB' | 'GB'>(isGb ? 'GB' : 'MB');
+  const [customVal, setCustomVal] = useState<string>(
+    unit === 'GB'
+      ? String(currentMb % 1024 === 0 ? currentMb / 1024 : (currentMb / 1024).toFixed(1))
+      : String(currentMb)
+  );
+
+  React.useEffect(() => {
+    if (currentMb >= 1024 && currentMb % 1024 === 0) {
+      setUnit('GB');
+      setCustomVal(String(currentMb / 1024));
+    } else if (unit === 'GB' && currentMb >= 1024) {
+      setCustomVal(String((currentMb / 1024).toFixed(1)));
+    } else {
+      setUnit('MB');
+      setCustomVal(String(currentMb));
+    }
+  }, [currentMb]);
+
+  const handleUnitToggle = () => {
+    if (unit === 'MB') {
+      const gbVal = currentMb >= 1024 ? Math.round(currentMb / 1024) : 1;
+      setUnit('GB');
+      setCustomVal(String(gbVal));
+      onChange(gbVal * 1024);
+    } else {
+      setUnit('MB');
+      setCustomVal(String(currentMb));
+    }
+  };
+
+  const handleCustomChange = (valStr: string) => {
+    setCustomVal(valStr);
+    const num = parseFloat(valStr);
+    if (!isNaN(num) && num > 0) {
+      const calculatedMb = unit === 'GB' ? Math.round(num * 1024) : Math.round(num);
+      onChange(Math.max(1, Math.min(51200, calculatedMb)));
+    }
+  };
+
+  return (
+    <div className="p-3 rounded-xl bg-gray-50/90 dark:bg-gray-800/60 border border-gray-200/90 dark:border-gray-700/80 space-y-2.5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-gray-800 dark:text-gray-200">{label}</span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+              Active: {formatSizeMb(currentMb)}
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">{description}</p>
+        </div>
+
+        {/* Custom Input with MB / GB Unit Selector */}
+        <div className="flex items-center gap-1.5 self-start sm:self-auto shrink-0">
+          <span className="text-[11px] font-medium text-gray-500">Custom:</span>
+          <div className="flex items-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 overflow-hidden shadow-xs">
+            <input
+              type="number"
+              min="1"
+              max="50000"
+              step={unit === 'GB' ? '0.1' : '1'}
+              value={customVal}
+              onChange={(e) => handleCustomChange(e.target.value)}
+              className="w-16 h-7 px-1.5 text-xs font-bold text-center focus:outline-none bg-transparent text-gray-900 dark:text-gray-100"
+            />
+            <button
+              type="button"
+              onClick={handleUnitToggle}
+              title={`Click to switch unit (currently ${unit})`}
+              className="px-2 h-7 text-[11px] font-bold bg-gray-100 dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition-colors"
+            >
+              {unit}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Preset Pill Buttons */}
+      <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-gray-200/60 dark:border-gray-700/60">
+        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1">Presets:</span>
+        {presets.map((mb) => {
+          const isCur = currentMb === mb;
+          return (
+            <button
+              key={mb}
+              type="button"
+              onClick={() => onChange(mb)}
+              className={`text-xs px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                isCur
+                  ? 'border-purple-600 bg-purple-600 text-white shadow-xs'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:border-purple-300 hover:bg-purple-50/50 dark:hover:bg-purple-950/20'
+              }`}
+            >
+              {formatSizeMb(mb)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function QuestionCard({
   question,
   isActive,
@@ -145,7 +264,7 @@ export default function QuestionCard({
     setImageError(null);
     const maxMb = question.config?.maxImageSizeMb || 10;
     if (file.size > maxMb * 1024 * 1024) {
-      setImageError(`Image size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds allowed limit of ${maxMb} MB`);
+      setImageError(`Image size (${formatBytes(file.size)}) exceeds allowed limit of ${formatSizeMb(maxMb)}`);
       setIsUploadingImage(false);
       return;
     }
@@ -181,7 +300,7 @@ export default function QuestionCard({
     setVideoError(null);
     const maxMb = question.config?.maxVideoSizeMb || 50;
     if (file.size > maxMb * 1024 * 1024) {
-      setVideoError(`Video size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds allowed limit of ${maxMb} MB`);
+      setVideoError(`Video size (${formatBytes(file.size)}) exceeds allowed limit of ${formatSizeMb(maxMb)}`);
       setIsUploadingVideo(false);
       return;
     }
@@ -728,56 +847,18 @@ export default function QuestionCard({
               </div>
             </div>
 
-            {/* Max File Size in MB */}
-            <div className="space-y-1.5 pt-1">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                  Maximum File Size Limit:
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={question.config?.maxFileSizeMb || 10}
-                    onChange={(e) => {
-                      const val = Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1));
-                      onChange({
-                        config: { ...question.config, maxFileSizeMb: val },
-                      });
-                    }}
-                    className="w-16 h-7 text-xs font-bold text-center"
-                  />
-                  <span className="text-xs font-semibold text-gray-500">MB</span>
-                </div>
-              </div>
-
-              {/* Quick size presets */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                <span className="text-[11px] text-gray-400 mr-1">Presets:</span>
-                {[5, 10, 25, 50, 100].map((mb) => {
-                  const isCur = (question.config?.maxFileSizeMb || 10) === mb;
-                  return (
-                    <button
-                      key={mb}
-                      type="button"
-                      onClick={() =>
-                        onChange({
-                          config: { ...question.config, maxFileSizeMb: mb },
-                        })
-                      }
-                      className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${
-                        isCur
-                          ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
-                          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
-                      }`}
-                    >
-                      {mb} MB
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {/* Max File Size Configuration */}
+            <SizeLimitControl
+              label="Maximum File Size Limit:"
+              description="Configure maximum file size for respondent uploads (e.g. photos, videos, documents)"
+              currentMb={question.config?.maxFileSizeMb || 10}
+              presets={[10, 25, 100, 500, 1024, 5120, 10240]}
+              onChange={(mb) =>
+                onChange({
+                  config: { ...question.config, maxFileSizeMb: mb },
+                })
+              }
+            />
 
             {/* Allowed File Types */}
             <div className="space-y-2 pt-2 border-t border-purple-100 dark:border-purple-900/30">
@@ -824,7 +905,7 @@ export default function QuestionCard({
               </div>
               <p className="text-[11px] text-gray-400">
                 {(question.config?.allowedFileTypes || []).length === 0
-                  ? 'All file types accepted by default (up to ' + (question.config?.maxFileSizeMb || 10) + ' MB)'
+                  ? 'All file types accepted by default (up to ' + formatSizeMb(question.config?.maxFileSizeMb || 10) + ')'
                   : 'Restricted to selected categories only.'}
               </p>
             </div>
@@ -929,37 +1010,17 @@ export default function QuestionCard({
         {qType === 'IMAGE_BLOCK' && (
           <div className="space-y-4 py-2">
             {/* Max Image Size Setting */}
-            <div className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-              <div>
-                <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                  Image Size Limit:
-                </span>
-                <p className="text-[10px] text-gray-400">Maximum allowed file size for image upload</p>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {[2, 5, 10, 25].map((mb) => {
-                  const isCur = (question.config?.maxImageSizeMb || 10) === mb;
-                  return (
-                    <button
-                      key={mb}
-                      type="button"
-                      onClick={() =>
-                        onChange({
-                          config: { ...question.config, maxImageSizeMb: mb },
-                        })
-                      }
-                      className={`text-xs px-2 py-0.5 rounded border font-medium transition-all ${
-                        isCur
-                          ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
-                          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:border-gray-300'
-                      }`}
-                    >
-                      {mb}MB
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <SizeLimitControl
+              label="Image Size Limit:"
+              description="Maximum allowed file size for image upload (e.g. 500MB, 1GB, 5GB, 10GB)"
+              currentMb={question.config?.maxImageSizeMb || 10}
+              presets={[5, 10, 25, 100, 500, 1024, 5120, 10240]}
+              onChange={(mb) =>
+                onChange({
+                  config: { ...question.config, maxImageSizeMb: mb },
+                })
+              }
+            />
 
             {question.config?.imageUrl ? (
               <div className="space-y-3">
@@ -1092,7 +1153,7 @@ export default function QuestionCard({
                         <ImageIcon className="h-6 w-6" />
                       </div>
                       <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
-                        Click to upload an image (Max {question.config?.maxImageSizeMb || 10} MB)
+                        Click to upload an image (Max {formatSizeMb(question.config?.maxImageSizeMb || 10)})
                       </span>
                       <span className="text-[11px] text-gray-400 mt-0.5">
                         PNG, JPG, WebP, GIF supported
@@ -1128,37 +1189,17 @@ export default function QuestionCard({
         {qType === 'VIDEO_EMBED' && (
           <div className="space-y-4 py-2">
             {/* Max Video Size Setting */}
-            <div className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-              <div>
-                <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                  Video Upload Limit:
-                </span>
-                <p className="text-[10px] text-gray-400">Maximum allowed file size for video uploads</p>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {[10, 25, 50, 100].map((mb) => {
-                  const isCur = (question.config?.maxVideoSizeMb || 50) === mb;
-                  return (
-                    <button
-                      key={mb}
-                      type="button"
-                      onClick={() =>
-                        onChange({
-                          config: { ...question.config, maxVideoSizeMb: mb },
-                        })
-                      }
-                      className={`text-xs px-2 py-0.5 rounded border font-medium transition-all ${
-                        isCur
-                          ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
-                          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:border-gray-300'
-                      }`}
-                    >
-                      {mb}MB
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <SizeLimitControl
+              label="Video Upload Limit:"
+              description="Maximum allowed file size for video uploads (e.g. 500MB, 800MB, 1GB, 5GB, 10GB)"
+              currentMb={question.config?.maxVideoSizeMb || 50}
+              presets={[25, 50, 100, 500, 1024, 2048, 5120, 10240]}
+              onChange={(mb) =>
+                onChange({
+                  config: { ...question.config, maxVideoSizeMb: mb },
+                })
+              }
+            />
 
             {question.config?.videoUrl || question.config?.embedUrl ? (
               <div className="space-y-3">
@@ -1246,7 +1287,7 @@ export default function QuestionCard({
                         <Video className="h-6 w-6" />
                       </div>
                       <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
-                        Click to upload a video (Max {question.config?.maxVideoSizeMb || 50} MB)
+                        Click to upload a video (Max {formatSizeMb(question.config?.maxVideoSizeMb || 50)})
                       </span>
                       <span className="text-[11px] text-gray-400 mt-0.5">
                         MP4, WebM, MOV supported
