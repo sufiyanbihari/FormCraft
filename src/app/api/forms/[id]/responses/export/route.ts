@@ -194,12 +194,21 @@ export async function GET(
         for (const f of filesToZip) {
           try {
             let buffer: Buffer | null = null;
-            // Try reading from public/uploads on disk
+            // Try reading using persistent fileStorage getFile
             if (f.publicUrl.startsWith('/uploads/') || f.publicUrl.startsWith('uploads/')) {
               const cleanRel = f.publicUrl.replace(/^\/?uploads\//, '');
-              const localPath = path.join(process.cwd(), 'public', 'uploads', cleanRel);
               try {
-                buffer = await fs.readFile(localPath);
+                const { getFile } = await import('@/lib/storage/fileStorage');
+                const fileRes = await getFile(cleanRel);
+                if (fileRes?.buffer) {
+                  buffer = fileRes.buffer;
+                } else if (fileRes?.redirectUrl) {
+                  const resp = await fetch(fileRes.redirectUrl);
+                  if (resp.ok) {
+                    const arrBuf = await resp.arrayBuffer();
+                    buffer = Buffer.from(arrBuf);
+                  }
+                }
               } catch {
                 // fall through to fetch
               }

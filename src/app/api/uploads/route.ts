@@ -70,9 +70,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       file: fileRecord,
       publicUrl: saved.publicUrl,
+      directUrl: saved.directUrl || saved.publicUrl,
       fileName: saved.fileName,
       fileSize: saved.fileSize,
       mimeType: saved.mimeType,
+      provider: saved.provider,
     });
   } catch (error: any) {
     console.error('File upload failed:', error);
@@ -87,6 +89,31 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(
       { error: error?.message || 'File upload failed' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const fileKey = searchParams.get('fileKey');
+    if (!fileKey) {
+      return NextResponse.json({ error: 'fileKey is required' }, { status: 400 });
+    }
+
+    const { deleteUploadedFile } = await import('@/lib/storage/fileStorage');
+    const deleted = await deleteUploadedFile(fileKey);
+
+    await prisma.uploadedFile.deleteMany({
+      where: { fileKey },
+    });
+
+    return NextResponse.json({ success: true, deleted });
+  } catch (error: any) {
+    console.error('Delete uploaded file failed:', error);
+    return NextResponse.json(
+      { error: error?.message || 'Delete file failed' },
       { status: 500 }
     );
   }

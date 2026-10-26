@@ -2028,6 +2028,9 @@ function PublicFormContent() {
                               <img
                                 src={val.publicUrl}
                                 alt={val.fileName || 'Uploaded image'}
+                                onError={(e) => {
+                                  (e.target as HTMLElement).style.display = 'none';
+                                }}
                                 className="h-32 w-48 rounded-lg object-contain bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm"
                               />
                               <a
