@@ -922,6 +922,11 @@ function FormBuilderContent() {
         }
         onImportSuccess={handleImportSuccess}
         primaryColor={theme.primaryColor}
+        isQuiz={isQuiz}
+        onEnableQuiz={() => {
+          setIsQuiz(true);
+          showToast('Quiz mode enabled!');
+        }}
       />
     </div>
   );
