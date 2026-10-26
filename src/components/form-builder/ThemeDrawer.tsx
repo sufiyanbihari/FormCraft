@@ -21,6 +21,7 @@ import {
   Sliders,
   Eye,
 } from 'lucide-react';
+import { uploadFile } from '@/lib/storage/clientUpload';
 
 export interface ThemeConfig {
   primaryColor: string;
@@ -144,20 +145,14 @@ export default function ThemeDrawer({ isOpen, onClose, theme, onChange }: ThemeD
     setIsUploadingBanner(true);
     setBannerError(null);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch('/api/uploads', {
-        method: 'POST',
-        body: fd,
-      });
-      const data = await res.json();
-      if (res.ok && data.publicUrl) {
+      const data = await uploadFile(file);
+      if (data?.publicUrl) {
         onChange({ headerImageUrl: data.publicUrl });
       } else {
-        setBannerError(data.error || 'Failed to upload banner');
+        setBannerError('Failed to upload banner');
       }
-    } catch {
-      setBannerError('Failed to upload banner');
+    } catch (err: any) {
+      setBannerError(err?.message || 'Failed to upload banner');
     } finally {
       setIsUploadingBanner(false);
     }

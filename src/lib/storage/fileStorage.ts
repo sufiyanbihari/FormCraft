@@ -774,3 +774,134 @@ export async function migrateLocalFilesToStorage(
 
   return summary;
 }
+
+// -------------------------------------------------------------
+// Direct-to-Storage Pre-signed Upload URL Generation
+// (Bypasses Vercel 4.5MB Serverless Payload Limits for Video)
+// -------------------------------------------------------------
+export interface PresignedUploadResult {
+  mode: 'signed_url' | 'vercel_blob' | 'direct_api';
+  provider: StorageProviderType;
+  uploadUrl: string;
+  fileKey: string;
+  publicUrl: string;
+  directUrl?: string;
+  method?: 'PUT' | 'POST';
+  headers?: Record<string, string>;
+  clientToken?: string;
+}
+
+export async function createPresignedUploadUrl(params: {
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  maxSizeMb?: number;
+}): Promise<PresignedUploadResult> {
+  const sanitizedOriginalName = params.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const ext = (path.extname(sanitizedOriginalName) || '').toLowerCase();
+
+  if (BLOCKED_EXTENSIONS.has(ext)) {
+    throw new Error(`File extension "${ext}" is not permitted for security reasons`);
+  }
+
+  const effectiveMaxMb = params.maxSizeMb && params.maxSizeMb > 0 ? params.maxSizeMb : 10240;
+  const maxAllowedBytes = effectiveMaxMb * 1024 * 1024;
+  if (params.fileSize > maxAllowedBytes) {
+    throw new Error(
+      `File size (${formatBytes(params.fileSize)}) exceeds maximum allowed limit of ${formatSizeMb(effectiveMaxMb)}`
+    );
+  }
+
+  let effectiveMimeType = (params.mimeType || '').trim().toLowerCase();
+  if (!effectiveMimeType || effectiveMimeType === 'application/octet-stream') {
+    effectiveMimeType = EXTENSION_MIME_MAP[ext] || 'application/octet-stream';
+  }
+
+  let safeExt = ext;
+  if (!safeExt) {
+    if (effectiveMimeType.includes('mp4')) safeExt = '.mp4';
+    else if (effectiveMimeType.includes('webm')) safeExt = '.webm';
+    else if (effectiveMimeType.includes('quicktime')) safeExt = '.mov';
+    else if (effectiveMimeType.includes('jpeg')) safeExt = '.jpg';
+    else if (effectiveMimeType.includes('png')) safeExt = '.png';
+    else if (effectiveMimeType.includes('pdf')) safeExt = '.pdf';
+    else safeExt = '.bin';
+  }
+
+  const randomSuffix = crypto.randomBytes(16).toString('hex');
+  const fileKey = `${Date.now()}-${randomSuffix}${safeExt}`;
+  const publicUrl = `/uploads/${fileKey}`;
+  const provider = getActiveStorageProvider();
+
+  // 1. S3-Compatible Direct Upload (AWS S3, Cloudflare R2, MinIO, Supabase)
+  if (provider === 's3' || Boolean(process.env.S3_BUCKET || process.env.AWS_S3_BUCKET)) {
+    const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+    const s3 = getS3Client();
+    const bucket = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET!;
+    const command = new PutObjectCommand({
+      Bucket: bucket,
+      Key: fileKey,
+      ContentType: effectiveMimeType,
+    });
+
+    const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 900 }); // 15 mins
+    const directUrl = process.env.S3_PUBLIC_URL
+      ? `${process.env.S3_PUBLIC_URL.replace(/\/$/, '')}/${fileKey}`
+      : `https://${bucket}.s3.${process.env.S3_REGION || 'us-east-1'}.amazonaws.com/${fileKey}`;
+
+    return {
+      mode: 'signed_url',
+      provider: 's3',
+      uploadUrl: presignedUrl,
+      method: 'PUT',
+      headers: {
+        'Content-Type': effectiveMimeType,
+      },
+      fileKey,
+      publicUrl,
+      directUrl,
+    };
+  }
+
+  // 2. Vercel Blob Direct Client Upload
+  if (provider === 'vercel-blob' || Boolean(process.env.BLOB_READ_WRITE_TOKEN)) {
+    const { generateClientTokenFromReadWriteToken } = await import('@vercel/blob/client');
+    const clientToken = await generateClientTokenFromReadWriteToken({
+      pathname: fileKey,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+      onUploadCompleted: {
+        callbackUrl: `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/uploads/complete`,
+      },
+    });
+
+    return {
+      mode: 'vercel_blob',
+      provider: 'vercel-blob',
+      uploadUrl: '',
+      clientToken,
+      fileKey,
+      publicUrl,
+      directUrl: `https://public.blob.vercel-storage.com/${fileKey}`,
+    };
+  }
+
+  // 3. Fallback: Direct API route (for smaller files / images or local development)
+  // Check if deployed on Vercel without cloud object storage credentials
+  if (
+    (process.env.VERCEL || process.env.NODE_ENV === 'production') &&
+    params.fileSize > 4.5 * 1024 * 1024
+  ) {
+    throw new Error(
+      `File size (${formatBytes(params.fileSize)}) exceeds the Vercel 4.5MB serverless body limit. Please configure S3_BUCKET or BLOB_READ_WRITE_TOKEN in your Vercel project settings to enable direct object-storage uploads.`
+    );
+  }
+
+  return {
+    mode: 'direct_api',
+    provider,
+    uploadUrl: '/api/uploads',
+    method: 'POST',
+    fileKey,
+    publicUrl,
+  };
+}

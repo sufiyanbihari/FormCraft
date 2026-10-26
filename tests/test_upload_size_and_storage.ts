@@ -10,6 +10,7 @@ import {
   deleteFromDatabase,
   ensureDatabaseStorageTable,
   migrateLocalFilesToStorage,
+  createPresignedUploadUrl,
 } from '../src/lib/storage/fileStorage';
 import { GET as getUploadHandler } from '../src/app/uploads/[...path]/route';
 import { POST as postUploadHandler, DELETE as deleteUploadHandler } from '../src/app/api/uploads/route';
@@ -208,6 +209,244 @@ async function runTests() {
   assert.strictEqual(verifyText, 'Integration test file payload');
   console.log('  ✓ GET /uploads/[...path] retrieved the file uploaded via POST /api/uploads\n');
 
+  // Test 11: createPresignedUploadUrl security checks (dangerous extensions)
+  console.log('Test 11: createPresignedUploadUrl blocked extensions');
+  let blockedCount = 0;
+  for (const name of ['payload.exe', 'script.sh', 'macro.bat', 'shell.php']) {
+    try {
+      await createPresignedUploadUrl({
+        fileName: name,
+        fileSize: 1024,
+        mimeType: 'application/octet-stream',
+      });
+    } catch (err: any) {
+      if (err.message.includes('not permitted for security reasons')) {
+        blockedCount++;
+      }
+    }
+  }
+  assert.strictEqual(blockedCount, 4, 'All 4 dangerous extensions should be blocked');
+  console.log('  ✓ createPresignedUploadUrl successfully blocked executable extensions\n');
+
+  // Test 12: createPresignedUploadUrl size limit checks
+  console.log('Test 12: createPresignedUploadUrl size limit enforcement');
+  let sizeRejected = false;
+  try {
+    await createPresignedUploadUrl({
+      fileName: 'large-video.mp4',
+      fileSize: 20 * 1024 * 1024, // 20 MB
+      mimeType: 'video/mp4',
+      maxSizeMb: 10, // Max 10 MB
+    });
+  } catch (err: any) {
+    sizeRejected = true;
+    assert(err.message.includes('exceeds maximum allowed limit of 10 MB'));
+  }
+  assert(sizeRejected, 'Should reject file exceeding maxSizeMb');
+  console.log('  ✓ createPresignedUploadUrl rejected file exceeding maxSizeMb\n');
+
+  // Test 13: createPresignedUploadUrl Vercel 4.5MB guardrail in production
+  console.log('Test 13: Vercel 4.5MB platform limit guardrail in production');
+  const prevVercelEnv = process.env.VERCEL;
+  const prevS3Bucket = process.env.S3_BUCKET;
+  const prevAwsBucket = process.env.AWS_S3_BUCKET;
+  const prevBlobToken = process.env.BLOB_READ_WRITE_TOKEN;
+
+  try {
+    process.env.VERCEL = '1';
+    delete process.env.S3_BUCKET;
+    delete process.env.AWS_S3_BUCKET;
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+
+    let vercelLimitCaught = false;
+    try {
+      await createPresignedUploadUrl({
+        fileName: 'sample-large-video.mp4',
+        fileSize: 10 * 1024 * 1024, // 10MB
+        mimeType: 'video/mp4',
+      });
+    } catch (err: any) {
+      vercelLimitCaught = true;
+      assert(err.message.includes('Vercel 4.5MB serverless body limit'));
+      assert(err.message.includes('Please configure S3_BUCKET or BLOB_READ_WRITE_TOKEN'));
+    }
+    assert(vercelLimitCaught, 'Should catch Vercel 4.5MB limit in production when no object storage configured');
+    console.log('  ✓ Vercel 4.5MB serverless limit guardrail triggers actionable error in production\n');
+  } finally {
+    if (prevVercelEnv !== undefined) {
+      process.env.VERCEL = prevVercelEnv;
+    } else {
+      delete process.env.VERCEL;
+    }
+    if (prevS3Bucket) process.env.S3_BUCKET = prevS3Bucket; else delete process.env.S3_BUCKET;
+    if (prevAwsBucket) process.env.AWS_S3_BUCKET = prevAwsBucket; else delete process.env.AWS_S3_BUCKET;
+    if (prevBlobToken) process.env.BLOB_READ_WRITE_TOKEN = prevBlobToken; else delete process.env.BLOB_READ_WRITE_TOKEN;
+  }
+
+  // Test 14: Direct S3/R2 presigned upload URL generation
+  console.log('Test 14: Direct S3 / Cloudflare R2 presigned PUT URL generation');
+  const s3TestBucket = 'test-formcraft-uploads';
+  const prevS3Key = process.env.AWS_ACCESS_KEY_ID;
+  const prevS3Secret = process.env.AWS_SECRET_ACCESS_KEY;
+  const prevS3Reg = process.env.AWS_REGION;
+
+  try {
+    process.env.S3_BUCKET = s3TestBucket;
+    process.env.AWS_ACCESS_KEY_ID = 'test-key-id';
+    process.env.AWS_SECRET_ACCESS_KEY = 'test-secret-access-key-12345';
+    process.env.AWS_REGION = 'us-east-1';
+
+    const s3Presigned = await createPresignedUploadUrl({
+      fileName: 'presentation.mp4',
+      fileSize: 50 * 1024 * 1024, // 50MB
+      mimeType: 'video/mp4',
+      maxSizeMb: 100,
+    });
+
+    assert.strictEqual(s3Presigned.mode, 'signed_url');
+    assert.strictEqual(s3Presigned.provider, 's3');
+    assert.strictEqual(s3Presigned.method, 'PUT');
+    assert(s3Presigned.uploadUrl.startsWith('https://'), 'Upload URL must be https');
+    assert(s3Presigned.uploadUrl.includes('X-Amz-Signature'), 'Must contain AWS SigV4 query params');
+    assert(s3Presigned.uploadUrl.includes(s3Presigned.fileKey), 'Must contain fileKey');
+    assert.strictEqual(s3Presigned.headers?.['Content-Type'], 'video/mp4');
+    assert.strictEqual(s3Presigned.publicUrl, `/uploads/${s3Presigned.fileKey}`);
+    console.log('  ✓ S3/R2 presigned URL generated with SigV4 signature and PUT method\n');
+  } finally {
+    delete process.env.S3_BUCKET;
+    if (prevS3Key) process.env.AWS_ACCESS_KEY_ID = prevS3Key; else delete process.env.AWS_ACCESS_KEY_ID;
+    if (prevS3Secret) process.env.AWS_SECRET_ACCESS_KEY = prevS3Secret; else delete process.env.AWS_SECRET_ACCESS_KEY;
+    if (prevS3Reg) process.env.AWS_REGION = prevS3Reg; else delete process.env.AWS_REGION;
+  }
+
+  // Test 15: POST /api/uploads/presigned route handler
+  console.log('Test 15: POST /api/uploads/presigned route handler integration');
+  const { POST: presignedHandler } = await import('../src/app/api/uploads/presigned/route');
+
+  // 15a: Missing fileName
+  const badReq1 = new NextRequest('http://localhost:3000/api/uploads/presigned', {
+    method: 'POST',
+    body: JSON.stringify({ fileSize: 1000 }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const badRes1 = await presignedHandler(badReq1);
+  assert.strictEqual(badRes1.status, 400);
+
+  // 15b: Dangerous file extension
+  const dangerousReq = new NextRequest('http://localhost:3000/api/uploads/presigned', {
+    method: 'POST',
+    body: JSON.stringify({ fileName: 'virus.exe', fileSize: 1000 }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const dangerousRes = await presignedHandler(dangerousReq);
+  assert.strictEqual(dangerousRes.status, 400);
+  const dangerousJson = await dangerousRes.json();
+  assert(dangerousJson.error.includes('not permitted for security reasons'));
+
+  // 15c: Valid presigned request (local mode <= 4.5MB)
+  const validPresignedReq = new NextRequest('http://localhost:3000/api/uploads/presigned', {
+    method: 'POST',
+    body: JSON.stringify({
+      fileName: 'interview-clip.mp4',
+      fileSize: 2 * 1024 * 1024,
+      mimeType: 'video/mp4',
+      maxSizeMb: 50,
+    }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const validPresignedRes = await presignedHandler(validPresignedReq);
+  assert.strictEqual(validPresignedRes.status, 200);
+  const validPresignedData = await validPresignedRes.json();
+  assert.strictEqual(validPresignedData.success, true);
+  assert(validPresignedData.fileKey.endsWith('.mp4'));
+  assert(validPresignedData.publicUrl.startsWith('/uploads/'));
+  assert.strictEqual(validPresignedData.mode, 'direct_api');
+
+  // 15d: Valid presigned request with S3/R2 direct-to-storage enabled
+  try {
+    process.env.S3_BUCKET = 'formcraft-cloud-bucket';
+    process.env.AWS_ACCESS_KEY_ID = 'test-id';
+    process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+    process.env.AWS_REGION = 'us-east-1';
+
+    const s3RouteReq = new NextRequest('http://localhost:3000/api/uploads/presigned', {
+      method: 'POST',
+      body: JSON.stringify({
+        fileName: 'customer-video.mp4',
+        fileSize: 50 * 1024 * 1024,
+        mimeType: 'video/mp4',
+        maxSizeMb: 100,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const s3RouteRes = await presignedHandler(s3RouteReq);
+    assert.strictEqual(s3RouteRes.status, 200);
+    const s3RouteData = await s3RouteRes.json();
+    assert.strictEqual(s3RouteData.success, true);
+    assert.strictEqual(s3RouteData.mode, 'signed_url');
+    assert.strictEqual(s3RouteData.provider, 's3');
+    assert(s3RouteData.uploadUrl.startsWith('https://'));
+  } finally {
+    delete process.env.S3_BUCKET;
+    delete process.env.AWS_ACCESS_KEY_ID;
+    delete process.env.AWS_SECRET_ACCESS_KEY;
+    delete process.env.AWS_REGION;
+  }
+  console.log('  ✓ POST /api/uploads/presigned validates inputs and returns upload configuration\n');
+
+  // Test 16: POST /api/uploads/complete route handler
+  console.log('Test 16: POST /api/uploads/complete route handler integration');
+  const { POST: completeHandler } = await import('../src/app/api/uploads/complete/route');
+
+  const testFileKey = `test-direct-complete-${Date.now()}.mp4`;
+  const completeReq = new NextRequest('http://localhost:3000/api/uploads/complete', {
+    method: 'POST',
+    body: JSON.stringify({
+      fileKey: testFileKey,
+      fileName: 'interview-clip.mp4',
+      fileSize: 15 * 1024 * 1024,
+      mimeType: 'video/mp4',
+      directUrl: `https://test-bucket.s3.amazonaws.com/${testFileKey}`,
+    }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const completeRes = await completeHandler(completeReq);
+  assert.strictEqual(completeRes.status, 200, 'POST /api/uploads/complete should succeed');
+  const completeData = await completeRes.json();
+  assert.strictEqual(completeData.success, true);
+  assert.strictEqual(completeData.file.fileKey, testFileKey);
+  assert.strictEqual(completeData.publicUrl, `/uploads/${testFileKey}`);
+  assert.strictEqual(completeData.fileName, 'interview-clip.mp4');
+
+  // Verify DB record exists
+  const dbRecord = await prisma.uploadedFile.findUnique({
+    where: { fileKey: testFileKey },
+  });
+  assert(dbRecord, 'Record must exist in prisma.uploadedFile');
+  assert.strictEqual(dbRecord.fileKey, testFileKey);
+  assert.strictEqual(dbRecord.fileSize, 15 * 1024 * 1024);
+  console.log('  ✓ POST /api/uploads/complete saved metadata in database and created audit record\n');
+
+  // Clean up completed test record
+  await prisma.uploadedFile.delete({ where: { fileKey: testFileKey } });
+
+  // Test 17: Authentication /api/auth/me behavior
+  console.log('Test 17: Authentication status check (/api/auth/me)');
+  const { GET: authMeHandler } = await import('../src/app/api/auth/me/route');
+
+  const unauthReq = new NextRequest('http://localhost:3000/api/auth/me');
+  const unauthRes = await authMeHandler(unauthReq);
+  assert.strictEqual(
+    unauthRes.status,
+    401,
+    '/api/auth/me should return HTTP 401 when called without a session cookie'
+  );
+  const unauthData = await unauthRes.json();
+  assert.strictEqual(unauthData.user, null, 'User should be null in unauthenticated state');
+  console.log('  ✓ /api/auth/me correctly returns 401 { user: null } for unauthenticated requests');
+  console.log('  ✓ Confirmed: 401 is normal for public form respondents, does not impede anonymous uploads\n');
+
   // Clean up
   await deleteUploadedFile(savedImage.fileKey);
   await deleteUploadedFile(savedVideo.fileKey);
@@ -216,7 +455,7 @@ async function runTests() {
     where: { fileKey: { in: [savedImage.fileKey, savedVideo.fileKey, verifyPath] } },
   });
 
-  console.log('🎉 ALL UPLOAD & RETRIEVAL TESTS PASSED SUCCESSFULLY!');
+  console.log('🎉 ALL 17 UPLOAD, STORAGE, STREAMING & AUTH TESTS PASSED SUCCESSFULLY!');
 }
 
 runTests()

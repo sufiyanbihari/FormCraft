@@ -57,6 +57,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { getVideoEmbedUrl, formatBytes, formatSizeMb, isLikelyImageSource, isLikelyVideoSource } from '@/lib/utils';
+import { uploadFile } from '@/lib/storage/clientUpload';
 
 export const QUESTION_TYPE_LABELS: Record<string, { label: string; icon: any }> = {
   SHORT_ANSWER: { label: 'Short answer', icon: AlignLeft },
@@ -388,28 +389,8 @@ export default function QuestionCard({
     }
 
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('maxSizeMb', String(maxMb));
-      const res = await fetch('/api/uploads', {
-        method: 'POST',
-        body: fd,
-      });
-      const data = await res.json();
-      if (res.ok && data.publicUrl) {
-        // Pre-verify that the image is accessible from the server before revoking local blob
-        if (typeof window !== 'undefined') {
-          await new Promise<void>((resolve) => {
-            const testImg = new window.Image();
-            testImg.onload = () => resolve();
-            testImg.onerror = () => {
-              // Wait briefly if filesystem watcher had momentary lag
-              setTimeout(resolve, 250);
-            };
-            testImg.src = `${data.publicUrl}?t=${Date.now()}`;
-          });
-        }
-
+      const data = await uploadFile(file, { maxSizeMb: maxMb });
+      if (data && data.publicUrl) {
         setHasImageLoadError(false);
         setImageRetryCount(0);
         setImageKey((k) => k + 1);
@@ -426,7 +407,7 @@ export default function QuestionCard({
           try { URL.revokeObjectURL(localBlobUrl); } catch {}
         }
       } else {
-        setImageError(data.error || 'Failed to upload image');
+        setImageError('Failed to upload image');
         if (localBlobUrl) {
           try { URL.revokeObjectURL(localBlobUrl); } catch {}
         }
@@ -438,8 +419,8 @@ export default function QuestionCard({
           },
         });
       }
-    } catch {
-      setImageError('Failed to upload image');
+    } catch (err: any) {
+      setImageError(err?.message || 'Failed to upload image');
       if (localBlobUrl) {
         try { URL.revokeObjectURL(localBlobUrl); } catch {}
       }
@@ -482,15 +463,8 @@ export default function QuestionCard({
     } catch {}
 
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('maxSizeMb', String(maxMb));
-      const res = await fetch('/api/uploads', {
-        method: 'POST',
-        body: fd,
-      });
-      const data = await res.json();
-      if (res.ok && data.publicUrl) {
+      const data = await uploadFile(file, { maxSizeMb: maxMb });
+      if (data && data.publicUrl) {
         setHasVideoLoadError(false);
         setVideoRetryCount(0);
         setVideoKey((k) => k + 1);
@@ -508,7 +482,7 @@ export default function QuestionCard({
           try { URL.revokeObjectURL(localBlobUrl); } catch {}
         }
       } else {
-        setVideoError(data.error || 'Failed to upload video');
+        setVideoError('Failed to upload video');
         if (localBlobUrl) {
           try { URL.revokeObjectURL(localBlobUrl); } catch {}
         }
@@ -521,8 +495,8 @@ export default function QuestionCard({
           },
         });
       }
-    } catch {
-      setVideoError('Failed to upload video');
+    } catch (err: any) {
+      setVideoError(err?.message || 'Failed to upload video');
       if (localBlobUrl) {
         try { URL.revokeObjectURL(localBlobUrl); } catch {}
       }

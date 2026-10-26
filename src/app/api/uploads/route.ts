@@ -87,9 +87,15 @@ export async function POST(request: NextRequest) {
         error: error?.message || 'File upload failed',
       },
     });
+    const status = error?.message?.includes('exceeds')
+      ? 413
+      : error?.message?.includes('not permitted') || error?.message?.includes('required')
+        ? 400
+        : 500;
+
     return NextResponse.json(
       { error: error?.message || 'File upload failed' },
-      { status: 500 }
+      { status }
     );
   }
 }

@@ -46,6 +46,7 @@ import {
 } from 'lucide-react';
 import { getVideoEmbedUrl, formatBytes, formatSizeMb, isLikelyImageSource, isLikelyVideoSource } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/useAuth';
+import { uploadFile } from '@/lib/storage/clientUpload';
 
 function isDarkColor(hexColor?: string): boolean {
   if (!hexColor || !hexColor.startsWith('#')) return true;
@@ -492,35 +493,23 @@ function PublicFormContent() {
     setFileErrors((prev) => ({ ...prev, [qId]: null }));
 
     try {
-      const formPayload = new FormData();
-      formPayload.append('file', file);
-      if (formData?.id) formPayload.append('formId', formData.id);
-      formPayload.append('maxSizeMb', String(maxMb));
-
-      console.log('[FormCraft File Upload] Sending POST /api/uploads...');
-      const res = await fetch('/api/uploads', {
-        method: 'POST',
-        body: formPayload,
+      console.log('[FormCraft File Upload] Initiating upload via universal uploadFile...');
+      const data = await uploadFile(file, {
+        formId: formData?.id,
+        maxSizeMb: maxMb,
       });
 
-      const data = await res.json().catch(() => ({}));
-      console.log('[FormCraft File Upload] Response status:', res.status, 'data:', data);
+      console.log('[FormCraft File Upload] Upload succeeded:', data);
 
-      if (res.ok) {
-        handleAnswerChange(qId, {
-          fileName: data.fileName || file.name,
-          fileSize: data.fileSize || file.size,
-          mimeType: data.mimeType || file.type,
-          publicUrl: data.publicUrl,
-        });
-        setFileErrors((prev) => ({ ...prev, [qId]: null }));
-      } else {
-        const errorText = data.error || `Server returned error (${res.status})`;
-        console.error('[FormCraft File Upload] API error:', errorText);
-        setFileErrors((prev) => ({ ...prev, [qId]: errorText }));
-      }
+      handleAnswerChange(qId, {
+        fileName: data.fileName || file.name,
+        fileSize: data.fileSize || file.size,
+        mimeType: data.mimeType || file.type,
+        publicUrl: data.publicUrl,
+      });
+      setFileErrors((prev) => ({ ...prev, [qId]: null }));
     } catch (err: any) {
-      console.error('[FormCraft File Upload] Network/client error:', err);
+      console.error('[FormCraft File Upload] Upload failed:', err);
       setFileErrors((prev) => ({
         ...prev,
         [qId]: err?.message || 'File upload failed. Please check your connection and try again.',
