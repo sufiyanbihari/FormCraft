@@ -7,12 +7,14 @@ import { findLookupRecord } from '@/lib/lookup/lookupService';
 import { FieldMapping } from '@/lib/lookup/lookupTypes';
 import { formatSizeMb } from '@/lib/utils';
 import crypto from 'crypto';
+import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ publicId: string }> }
 ) {
   try {
+    await ensureQuizSchema();
     const { publicId } = await params;
 
     const form = await prisma.form.findUnique({

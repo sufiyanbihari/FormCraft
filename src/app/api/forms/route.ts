@@ -4,6 +4,7 @@ import { getAuthUserFromRequest } from '@/lib/auth/session';
 import { createFormSchema } from '@/lib/validation/formSchema';
 import { FORM_TEMPLATES } from '@/lib/templates/seedTemplates';
 import { logActivity } from '@/lib/audit/auditLogger';
+import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,6 +12,8 @@ export async function GET(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    await ensureQuizSchema();
 
     const { searchParams } = new URL(request.url);
     const filter = searchParams.get('filter') || 'all'; // all, owned, shared, draft, published, archived, trash
@@ -91,6 +94,8 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    await ensureQuizSchema();
 
     const body = await request.json();
     const result = createFormSchema.safeParse(body);

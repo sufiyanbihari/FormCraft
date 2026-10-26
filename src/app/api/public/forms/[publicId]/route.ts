@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { getAuthUserFromRequest } from '@/lib/auth/session';
+import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ publicId: string }> }
 ) {
   try {
+    await ensureQuizSchema();
     const { publicId } = await params;
     const user = await getAuthUserFromRequest(request);
 

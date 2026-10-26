@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { getAuthUserFromRequest } from '@/lib/auth/session';
 import { getUserFormRole, canEditForm } from '@/lib/auth/rbac';
 import { logActivity } from '@/lib/audit/auditLogger';
+import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
 
 export async function POST(
   request: NextRequest,
@@ -13,6 +14,8 @@ export async function POST(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    await ensureQuizSchema();
 
     const { id } = await params;
     const role = await getUserFormRole(id, user.id);
