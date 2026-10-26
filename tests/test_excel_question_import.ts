@@ -4,11 +4,13 @@ import assert from 'assert';
 import jwt from 'jsonwebtoken';
 import { NextRequest } from 'next/server';
 import { prisma } from '../src/lib/db/prisma';
-import { parseExcelQuestions } from '../src/lib/excel/questionParser';
+import { parseExcelQuestions, generateQuizTemplateBuffer, QUIZ_TEMPLATE_HEADERS } from '../src/lib/excel/questionParser';
 import { POST as parseExcelHandler } from '../src/app/api/forms/[id]/import-questions/parse-excel/route';
 import { POST as importExcelHandler } from '../src/app/api/forms/[id]/import-questions/from-excel/route';
+import { GET as templateDownloadHandler } from '../src/app/api/forms/[id]/import-questions/template/route';
 import { POST as existingImportHandler } from '../src/app/api/forms/[id]/import-questions/route';
 import { POST as submitHandler } from '../src/app/api/public/forms/[publicId]/submissions/route';
+import * as XLSX from 'xlsx';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 
@@ -369,6 +371,53 @@ async function runExcelImportAcceptanceTests() {
     const fcImportData = await fcImportRes.json();
     assert.strictEqual(fcImportData.count, 3, 'Must import 3 questions');
     console.log('✓ FormCraft-to-FormCraft import verified and fully functioning');
+
+    // -------------------------------------------------------------------------
+    // TEST 7: Download Blank Excel Template API & Validation
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 7: Download Blank Excel Template API & Buffer Validation ---');
+    const templateReq = new NextRequest(`http://localhost/api/forms/${targetForm.id}/import-questions/template`, {
+      method: 'GET',
+      headers: {
+        cookie: adminCookie,
+      },
+    });
+
+    const templateRes = await templateDownloadHandler(templateReq, { params: Promise.resolve({ id: targetForm.id }) });
+    assert.strictEqual(templateRes.status, 200, 'Template download must return 200');
+    assert.strictEqual(
+      templateRes.headers.get('Content-Type'),
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Should have correct Excel MIME type'
+    );
+    assert.ok(
+      templateRes.headers.get('Content-Disposition')?.includes('filename="Quiz_Question_Template.xlsx"'),
+      'Content-Disposition must specify Quiz_Question_Template.xlsx'
+    );
+
+    // Read binary response body
+    const arrayBuf = await templateRes.arrayBuffer();
+    const templateBuffer = Buffer.from(arrayBuf);
+    assert.ok(templateBuffer.length > 0, 'Template buffer must not be empty');
+
+    // Parse the generated template with xlsx
+    const parsedWb = XLSX.read(templateBuffer, { type: 'buffer' });
+    assert.deepStrictEqual(parsedWb.SheetNames, ['Quiz Template'], 'Worksheet must be named "Quiz Template"');
+
+    const sheet = parsedWb.Sheets['Quiz Template'];
+    const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    assert.strictEqual(rows.length, 1, 'Blank template should only have 1 row (the header row)');
+    assert.deepStrictEqual(
+      rows[0],
+      [...QUIZ_TEMPLATE_HEADERS],
+      'Header row must match the exact 7 sample headers'
+    );
+
+    // Also verify our parser handles the blank template gracefully without crashing
+    const blankParseRes = parseExcelQuestions(templateBuffer);
+    assert.strictEqual(blankParseRes.totalQuestions, 0, 'Blank template should have 0 questions');
+    assert.deepStrictEqual(blankParseRes.sheetNames, ['Quiz Template']);
+    console.log('✓ Blank Quiz Template generated, verified with 7 headers, and tested against parser');
 
   } finally {
     // -------------------------------------------------------------------------

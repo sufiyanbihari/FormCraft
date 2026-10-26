@@ -58,6 +58,7 @@ Extend the existing Import Questions feature in FormCraft to support uploading E
   - 50% correct answers -> 60/120 pts (Failed)
 - [x] 5.4 Verify existing "Import from FormCraft" functionality remains fully intact.
 - [x] 5.5 Run automated unit/integration tests, `tsc --noEmit`, and `npm run build`.
+- [x] 5.6 Add "Download Excel Template" control providing a blank workbook with the 7 reference headers for Banas Dairy administrators.
 
 ---
 
@@ -65,21 +66,26 @@ Extend the existing Import Questions feature in FormCraft to support uploading E
 
 ### Current Status
 - **COMPLETED**: All 5 phases are fully implemented and verified against the acceptance test fixture `sample_format.xlsx`.
+- Added downloadable blank Excel workbook template (`Quiz_Question_Template.xlsx`) with the 7 headers on `Quiz Template` sheet, styled column widths, and endpoint `GET /api/forms/[id]/import-questions/template`.
 
 ### Modified Files
-- `src/components/form-builder/ImportQuestionsModal.tsx` — Extended with tabs, drag-and-drop file upload, spreadsheet preview, search, selection, and quiz prompt.
+- `src/components/form-builder/ImportQuestionsModal.tsx` — Extended with tabs, drag-and-drop file upload, "Download Excel Template" button beside upload control, spreadsheet preview, search, selection, and quiz prompt.
 - `src/app/(editor)/forms/[id]/page.tsx` — Connected `isQuiz` and `onEnableQuiz` props for the post-import quiz prompt.
+- `src/lib/excel/questionParser.ts` — Added `generateQuizTemplateBuffer()` and `QUIZ_TEMPLATE_HEADERS`.
 
 ### New Files
-- `src/lib/excel/questionParser.ts` — Modular, secure Excel/CSV question parser with header normalization, option mapping, answer key extraction, and Unicode preservation.
+- `src/lib/excel/questionParser.ts` — Modular, secure Excel/CSV question parser with header normalization, option mapping, answer key extraction, Unicode preservation, and template generator.
 - `src/app/api/forms/[id]/import-questions/parse-excel/route.ts` — API route handling spreadsheet parsing, validation, and metadata extraction.
 - `src/app/api/forms/[id]/import-questions/from-excel/route.ts` — Transactional database import endpoint for parsed Excel questions.
-- `tests/test_excel_question_import.ts` — End-to-end acceptance suite covering sample workbook parsing, security/auth, DB transactions, quiz grading, partial selections, and regression testing.
+- `src/app/api/forms/[id]/import-questions/template/route.ts` — API route serving the blank Excel quiz question template.
+- `tests/test_excel_question_import.ts` — End-to-end acceptance suite covering sample workbook parsing, security/auth, DB transactions, quiz grading, partial selections, template download, and regression testing.
 - `docs/tasks/EXCEL_QUESTION_IMPORT.md` — Task checklist and verification tracking.
 
 ### Bugs / Issues Identified & Mitigations
 - *Issue*: Submission grading response wraps quiz result inside `score: { total, max, percentage, isPassed }`.
   *Mitigation*: Updated test assertions to check `score.total` and validated submission DB record directly.
+- *Issue*: `Buffer` returned from template generator requires `new Uint8Array(buffer)` for strict `NextResponse` BodyInit typing in Next.js 16.
+  *Mitigation*: Converted buffer to `new Uint8Array(buffer)`; passes `tsc --noEmit` cleanly.
 
 ### Testing Results
 1. `tests/test_excel_question_import.ts`:
@@ -91,8 +97,10 @@ Extend the existing Import Questions feature in FormCraft to support uploading E
    - 50% score test response graded as 60/120 (Failed)
    - Partial import to dynamic new section verified
    - Existing FormCraft-to-FormCraft import verified without regressions
+   - Blank Excel Quiz Template download verified (200 OK, MIME type, `Quiz Template` sheet, 7 headers, tested against parser)
 2. `tests/test_import_questions.ts`: PASSED (Phase 1 existing tests pass)
 3. `tests/test_quiz_and_inline_images.ts`: PASSED (Quiz engine tests pass)
 4. `tests/test_form_creation_regression.ts`: PASSED (Form creation tests pass)
 5. `tsc --noEmit`: 0 errors
 6. `npm run build`: Production build succeeded with all routes compiled
+

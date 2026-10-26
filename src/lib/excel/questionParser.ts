@@ -405,3 +405,41 @@ export function parseExcelQuestions(
     errors: parsedQuestions.length === 0 ? ['No questions found in worksheet.'] : [],
   };
 }
+
+/**
+ * Standard 7 headers matching sample_format.xlsx
+ */
+export const QUIZ_TEMPLATE_HEADERS = [
+  'Question Text',
+  'Option A',
+  'Option B',
+  'Option C',
+  'Option D',
+  'Correct Answer',
+  'Marks',
+] as const;
+
+/**
+ * Generates a blank Excel workbook buffer with the 7 reference headers
+ * on worksheet "Quiz Template".
+ */
+export function generateQuizTemplateBuffer(): Buffer {
+  const ws = XLSX.utils.aoa_to_sheet([[...QUIZ_TEMPLATE_HEADERS]]);
+
+  // Set friendly column widths for comfortable editing in Excel
+  ws['!cols'] = [
+    { wch: 45 }, // Question Text
+    { wch: 25 }, // Option A
+    { wch: 25 }, // Option B
+    { wch: 25 }, // Option C
+    { wch: 25 }, // Option D
+    { wch: 16 }, // Correct Answer
+    { wch: 10 }, // Marks
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Quiz Template');
+
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+

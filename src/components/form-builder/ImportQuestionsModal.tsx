@@ -35,6 +35,7 @@ import {
   Check,
   X,
   RefreshCw,
+  Download,
 } from 'lucide-react';
 import { QUESTION_TYPE_LABELS } from './QuestionCard';
 
@@ -281,6 +282,32 @@ export default function ImportQuestionsModal({
   // ===========================================================================
   // EXCEL FILE PARSING & IMPORT HANDLERS
   // ===========================================================================
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
+
+  const handleDownloadTemplate = async () => {
+    try {
+      setIsDownloadingTemplate(true);
+      const res = await fetch(`/api/forms/${currentFormId}/import-questions/template`);
+      if (!res.ok) {
+        throw new Error('Failed to download template');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'Quiz_Question_Template.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      console.error('Error downloading template:', err);
+      setExcelParseError('Failed to download Excel template. Please try again.');
+    } finally {
+      setIsDownloadingTemplate(false);
+    }
+  };
+
   const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
@@ -884,22 +911,55 @@ export default function ImportQuestionsModal({
                       </p>
                     </div>
 
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={isParsingExcel}
-                      className="mt-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-4 h-8 flex items-center gap-2"
+                    <div
+                      className="flex items-center gap-2 mt-2 flex-wrap justify-center"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <FileSpreadsheet className="h-3.5 w-3.5" />
-                      Choose Excel File
-                    </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={isParsingExcel}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-4 h-8 flex items-center gap-2 shadow-xs cursor-pointer"
+                      >
+                        <FileSpreadsheet className="h-3.5 w-3.5" />
+                        Choose Excel File
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isParsingExcel || isDownloadingTemplate}
+                        onClick={handleDownloadTemplate}
+                        className="text-xs font-semibold px-3.5 h-8 border-gray-300 dark:border-gray-700 hover:border-purple-400 dark:hover:border-purple-600 hover:bg-purple-50/50 dark:hover:bg-purple-950/30 text-gray-700 dark:text-gray-200 flex items-center gap-2 shadow-xs cursor-pointer"
+                      >
+                        {isDownloadingTemplate ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-purple-600" />
+                        ) : (
+                          <Download className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+                        )}
+                        <span>Download Excel Template</span>
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Template Format Info Box */}
                   <div className="p-4 bg-gray-50 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-800 rounded-xl space-y-2 text-xs">
-                    <div className="flex items-center gap-2 font-bold text-gray-800 dark:text-gray-200">
-                      <HelpCircle className="h-4 w-4 text-purple-600 shrink-0" />
-                      <span>Required Spreadsheet Columns</span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-gray-800 dark:text-gray-200">
+                        <HelpCircle className="h-4 w-4 text-purple-600 shrink-0" />
+                        <span>Required Spreadsheet Columns</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleDownloadTemplate}
+                        disabled={isDownloadingTemplate}
+                        className="text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 font-semibold flex items-center gap-1 hover:underline text-[11px] cursor-pointer"
+                      >
+                        <Download className="h-3 w-3" />
+                        <span>Download Blank Template (.xlsx)</span>
+                      </button>
                     </div>
                     <p className="text-gray-500 text-[11px] leading-relaxed">
                       Your Excel sheet should contain headers matching:
