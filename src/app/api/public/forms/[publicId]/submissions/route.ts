@@ -524,19 +524,19 @@ export async function POST(
     if (form.isQuiz) {
       if (isImmediate) {
         const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
-        const passPercentage = (form.settings as any)?.quizPassPercentage;
+        const passPercentage = form.settings?.quizPassPercentage;
         const hasPassRule = passPercentage !== null && passPercentage !== undefined;
         const isPassed = hasPassRule ? percentage >= Number(passPercentage) : null;
         const customMessage =
           isPassed === true
-            ? (form.settings as any)?.quizPassMessage
+            ? form.settings?.quizPassMessage
             : isPassed === false
-              ? (form.settings as any)?.quizFailMessage
+              ? form.settings?.quizFailMessage
               : null;
 
-        const showCorrect = Boolean((form.settings as any)?.quizShowCorrectAnswers);
-        const showFeedback = Boolean((form.settings as any)?.quizShowFeedback);
-        const showPoints = (form.settings as any)?.quizShowPointsEarned !== false;
+        const showCorrect = Boolean(form.settings?.quizShowCorrectAnswers);
+        const showFeedback = Boolean(form.settings?.quizShowFeedback);
+        const showPoints = form.settings?.quizShowPointsEarned !== false;
 
         const breakdown = gradedAnswers.map((g) => {
           const q = allQuestions.find((item) => item.id === g.questionId);

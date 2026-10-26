@@ -174,7 +174,11 @@ export async function PATCH(
 
       const totalScore = freshAnswers.reduce((sum, a) => sum + (a.score || 0), 0);
 
-      const subData: any = { totalScore };
+      const subData: {
+        totalScore: number;
+        isGradeReleased?: boolean;
+        gradeReleasedAt?: Date | null;
+      } = { totalScore };
       if (isGradeReleased !== undefined) {
         subData.isGradeReleased = Boolean(isGradeReleased);
         subData.gradeReleasedAt = isGradeReleased ? new Date() : null;
