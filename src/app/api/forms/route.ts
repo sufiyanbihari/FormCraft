@@ -82,6 +82,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const correlationId =
+    request.headers.get('x-correlation-id') ||
+    request.headers.get('x-request-id') ||
+    crypto.randomUUID();
   try {
     const user = await getAuthUserFromRequest(request);
     if (!user) {
@@ -287,8 +291,21 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ form });
-  } catch (error) {
-    console.error('Failed to create form:', error);
-    return NextResponse.json({ error: 'Failed to create form' }, { status: 500 });
+  } catch (error: unknown) {
+    const err = error as { name?: string; code?: string; message?: string; meta?: unknown };
+    console.error(`[POST /api/forms][${correlationId}] Form creation failed:`, {
+      name: err?.name,
+      code: err?.code,
+      message: err?.message,
+      meta: err?.meta,
+      phase: 'FORM_CREATION_TRANSACTION',
+    });
+    return NextResponse.json(
+      { error: 'Failed to create form', correlationId },
+      {
+        status: 500,
+        headers: { 'x-correlation-id': correlationId },
+      }
+    );
   }
 }

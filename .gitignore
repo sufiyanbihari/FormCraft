@@ -49,6 +49,7 @@ next-env.d.ts
 
 # Local database files and backups
 *.sql
+!prisma/migrations/**/*.sql
 *.dump
 *.backup
 *.bak

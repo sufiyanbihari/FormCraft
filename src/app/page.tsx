@@ -80,6 +80,11 @@ export default function DashboardPage() {
 
   // Handle Blank Form Creation
   const handleCreateBlank = async () => {
+    if (!user) {
+      showToast('Please sign in to create a form');
+      router.push('/login');
+      return;
+    }
     try {
       setIsCreating(true);
       const res = await fetch('/api/forms', {
@@ -87,13 +92,19 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: 'Untitled form' }),
       });
-      const data = await res.json();
+      const data = (await res.json().catch(() => ({}))) as {
+        form?: { id: string };
+        error?: string;
+      };
       if (res.ok && data.form?.id) {
         router.push(`/forms/${data.form.id}`);
+      } else if (res.status === 401) {
+        showToast('Your session has expired. Please sign in again.');
+        router.push('/login');
       } else {
-        showToast('Failed to create form');
+        showToast(data.error || 'Failed to create form');
       }
-    } catch (err) {
+    } catch {
       showToast('Error creating form');
     } finally {
       setIsCreating(false);
@@ -102,6 +113,11 @@ export default function DashboardPage() {
 
   // Handle Template Form Creation
   const handleSelectTemplate = async (templateId: string) => {
+    if (!user) {
+      showToast('Please sign in to create a form');
+      router.push('/login');
+      return;
+    }
     try {
       setIsCreating(true);
       const res = await fetch('/api/forms', {
@@ -109,13 +125,19 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ templateId }),
       });
-      const data = await res.json();
+      const data = (await res.json().catch(() => ({}))) as {
+        form?: { id: string };
+        error?: string;
+      };
       if (res.ok && data.form?.id) {
         router.push(`/forms/${data.form.id}`);
+      } else if (res.status === 401) {
+        showToast('Your session has expired. Please sign in again.');
+        router.push('/login');
       } else {
-        showToast('Failed to create template form');
+        showToast(data.error || 'Failed to create template form');
       }
-    } catch (err) {
+    } catch {
       showToast('Error instantiating template');
     } finally {
       setIsCreating(false);
