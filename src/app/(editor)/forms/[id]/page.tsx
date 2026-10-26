@@ -10,6 +10,7 @@ import FloatingToolbar from '@/components/form-builder/FloatingToolbar';
 import ThemeDrawer, { ThemeConfig } from '@/components/form-builder/ThemeDrawer';
 import CollaboratorsModal from '@/components/form-builder/CollaboratorsModal';
 import LookupConfigModal from '@/components/form-builder/LookupConfigModal';
+import ImportQuestionsModal from '@/components/form-builder/ImportQuestionsModal';
 import ResponsesTab from '@/components/form-builder/ResponsesTab';
 import SettingsTab from '@/components/form-builder/SettingsTab';
 import { Input } from '@/components/ui/input';
@@ -60,6 +61,7 @@ function FormBuilderContent() {
   const [isThemeOpen, setIsThemeOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isLookupOpen, setIsLookupOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [lookupMappings, setLookupMappings] = useState<any[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -566,6 +568,38 @@ function FormBuilderContent() {
     }
   };
 
+  // Import Questions Success Handler
+  const handleImportSuccess = (importedQuestions: QuestionData[], newSection?: SectionData) => {
+    let nextSections = sections;
+    if (newSection) {
+      nextSections = [...sections, newSection];
+      setSections(nextSections);
+    }
+
+    setQuestions((prev) => {
+      const updated = [...prev, ...importedQuestions];
+      updateHistory({
+        title,
+        description,
+        sections: nextSections,
+        questions: updated,
+        theme,
+        settings,
+        isQuiz,
+      });
+      return updated;
+    });
+
+    if (importedQuestions.length > 0) {
+      setActiveQuestionId(importedQuestions[0].id);
+    }
+    showToast(
+      `Successfully imported ${importedQuestions.length} ${
+        importedQuestions.length === 1 ? 'question' : 'questions'
+      }!`
+    );
+  };
+
   // Update Section
   const handleUpdateSection = async (sId: string, delta: Partial<SectionData>) => {
     const updated = sections.map((s) => (s.id === sId ? { ...s, ...delta } : s));
@@ -822,6 +856,7 @@ function FormBuilderContent() {
             {/* Right-side Floating Action Toolbar */}
             <FloatingToolbar
               onAddQuestion={handleAddQuestion}
+              onImportQuestions={() => setIsImportModalOpen(true)}
               onAddSection={handleAddSection}
             />
           </div>
@@ -874,6 +909,19 @@ function FormBuilderContent() {
         onClose={() => setIsLookupOpen(false)}
         questions={questions}
         onMappingsChange={(updated) => setLookupMappings(updated)}
+      />
+
+      {/* Import Questions Modal */}
+      <ImportQuestionsModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        currentFormId={form.id}
+        sections={sections}
+        activeSectionId={
+          questions.find((q) => q.id === activeQuestionId)?.sectionId || sections[0]?.id
+        }
+        onImportSuccess={handleImportSuccess}
+        primaryColor={theme.primaryColor}
       />
     </div>
   );

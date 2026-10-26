@@ -336,7 +336,7 @@ export async function GET(
       'Submission ID',
       'Submission Date',
       'Respondent Email',
-      ...(form.isQuiz ? ['Quiz Score'] : []),
+      ...(form.isQuiz ? ['Quiz Score', 'Max Score', 'Percentage', 'Grade Status'] : []),
       ...questions.map((q) => q.title),
     ];
 
@@ -344,13 +344,24 @@ export async function GET(
       const answerMap = new Map<string, any>();
       sub.answers.forEach((ans) => answerMap.set(ans.questionId, ans.value));
 
+      const quizStats = form.isQuiz
+        ? [
+            sub.totalScore ?? 0,
+            sub.maxScore ?? 0,
+            sub.maxScore && sub.maxScore > 0
+              ? `${Math.round(((sub.totalScore ?? 0) / sub.maxScore) * 100)}%`
+              : '0%',
+            sub.isGradeReleased ? 'Released' : 'Pending Review',
+          ]
+        : [];
+
       if (sub.cattleOwners && sub.cattleOwners.length > 0) {
         return sub.cattleOwners.map((co) => {
           const rowValues = [
             `${sub.id}-${co.orderIndex + 1}`,
             sub.submittedAt.toISOString(),
             sub.respondentEmail || sub.respondent?.email || 'Anonymous',
-            ...(form.isQuiz ? [sub.totalScore ?? 0] : []),
+            ...quizStats,
             ...questions.map((q) => {
               if (isOwnerNameQ(q)) return co.ownerName;
               if (isOwnerMobileQ(q)) return co.ownerMobile;
@@ -377,7 +388,7 @@ export async function GET(
         sub.id,
         sub.submittedAt.toISOString(),
         sub.respondentEmail || sub.respondent?.email || 'Anonymous',
-        ...(form.isQuiz ? [sub.totalScore ?? 0] : []),
+        ...quizStats,
         ...questions.map((q) => {
           const raw = answerMap.get(q.id);
           if (raw === undefined || raw === null) return '';

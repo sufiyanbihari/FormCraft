@@ -134,6 +134,15 @@ model FormSettings {
   allowResponseEditing     Boolean    @default(false)
   showSummaryToRespondents Boolean    @default(false)
   accessMode               AccessMode @default(PUBLIC)
+  // Advanced Quiz Settings
+  quizReleaseGrade         String?    @default("IMMEDIATE") // "IMMEDIATE" | "AFTER_REVIEW"
+  quizShowCorrectAnswers   Boolean?   @default(true)
+  quizShowPointsEarned     Boolean?   @default(true)
+  quizShowFeedback         Boolean?   @default(true)
+  quizPassPercentage       Float?
+  quizPassMessage          String?    @default("Congratulations! You passed the quiz.")
+  quizFailMessage          String?    @default("Unfortunately, you did not reach the passing score.")
+  quizDefaultPoints        Int?       @default(1)
   createdAt                DateTime   @default(now())
   updatedAt                DateTime   @updatedAt
 
@@ -194,6 +203,7 @@ model QuestionOption {
   orderIndex     Int      @default(0)
   isOther        Boolean  @default(false)
   goToSectionId  String?  // null = continue to next, or specific sectionId, or "SUBMIT"
+  imageUrl       String?  // optional inline image for this option
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -233,6 +243,8 @@ model FormSubmission {
   isComplete       Boolean   @default(true)
   totalScore       Float?
   maxScore         Float?
+  isGradeReleased  Boolean   @default(false)
+  gradeReleasedAt  DateTime?
 
   form        Form               @relation(fields: [formId], references: [id], onDelete: Cascade)
   version     FormVersion?       @relation(fields: [formVersionId], references: [id], onDelete: SetNull)
@@ -267,14 +279,15 @@ model CattleOwnerEntry {
 }
 
 model SubmissionAnswer {
-  id           String   @id @default(cuid())
-  submissionId String
-  questionId   String
-  value        Json     // typed JSON (string, string[], object for grid, file metadata, etc.)
-  textAnswer   String?
-  score        Float?
-  isCorrect    Boolean?
-  createdAt    DateTime @default(now())
+  id               String   @id @default(cuid())
+  submissionId     String
+  questionId       String
+  value            Json     // typed JSON (string, string[], object for grid, file metadata, etc.)
+  textAnswer       String?
+  score            Float?
+  isCorrect        Boolean?
+  reviewerFeedback String?
+  createdAt        DateTime @default(now())
 
   submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
   question   FormQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
@@ -412,4 +425,15 @@ model FormLookupMapping {
   @@index([datasetId])
   @@index([formId, triggerQuestionId])
   @@map("form_lookup_mappings")
+}
+
+model UploadedFileData {
+  fileKey   String   @id @map("file_key") @db.VarChar(255)
+  fileName  String?  @map("file_name") @db.VarChar(255)
+  mimeType  String   @map("mime_type") @db.VarChar(255)
+  fileSize  Int      @map("file_size")
+  data      Bytes
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("uploaded_file_data")
 }

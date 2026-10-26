@@ -8,15 +8,18 @@ import {
   Video,
   Layers,
   Sparkles,
+  ArrowDownToLine,
 } from 'lucide-react';
 
 interface FloatingToolbarProps {
   onAddQuestion: (type?: string) => void;
+  onImportQuestions?: () => void;
   onAddSection: () => void;
 }
 
 export default function FloatingToolbar({
   onAddQuestion,
+  onImportQuestions,
   onAddSection,
 }: FloatingToolbarProps) {
   return (
@@ -28,6 +31,16 @@ export default function FloatingToolbar({
       >
         <PlusCircle className="h-5 w-5" />
       </button>
+
+      {onImportQuestions && (
+        <button
+          onClick={onImportQuestions}
+          className="p-2.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 text-gray-600 dark:text-gray-300 hover:text-purple-600 transition-colors group relative"
+          title="Import questions from another form"
+        >
+          <ArrowDownToLine className="h-5 w-5" />
+        </button>
+      )}
 
       <button
         onClick={() => onAddQuestion('SECTION_HEADER')}

@@ -1020,19 +1020,126 @@ function PublicFormContent() {
             </p>
           </div>
 
-          {/* Quiz Score Box */}
-          {submissionResult?.score && (
-            <div className="p-4 bg-purple-50 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800 text-center">
-              <div className="flex items-center justify-center gap-1.5 text-purple-700 dark:text-purple-300 text-xs font-semibold mb-1">
-                <Award className="h-4 w-4" />
-                <span>Quiz Score</span>
+          {/* Delayed Grade Release Message */}
+          {submissionResult?.isGradeReleased === false && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 text-center space-y-1">
+              <div className="flex items-center justify-center gap-1.5 text-amber-700 dark:text-amber-400 text-xs font-bold">
+                <Clock className="h-4 w-4" />
+                <span>Grades Under Review</span>
               </div>
-              <p className="text-3xl font-black text-purple-900 dark:text-purple-100">
-                {submissionResult.score.total}{' '}
-                <span className="text-lg font-semibold text-gray-400">
-                  / {submissionResult.score.max} pts
-                </span>
+              <p className="text-xs text-amber-800 dark:text-amber-300">
+                Your response has been saved. Your final grade and feedback will be released by the instructor after manual review.
               </p>
+            </div>
+          )}
+
+          {/* Quiz Score Box & Details */}
+          {submissionResult?.score && (
+            <div className="space-y-4">
+              <div className="p-4 bg-purple-50 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800 text-center">
+                <div className="flex items-center justify-center gap-1.5 text-purple-700 dark:text-purple-300 text-xs font-semibold mb-1">
+                  <Award className="h-4 w-4" />
+                  <span>Quiz Score</span>
+                </div>
+                <p className="text-3xl font-black text-purple-900 dark:text-purple-100">
+                  {submissionResult.score.total}{' '}
+                  <span className="text-lg font-semibold text-gray-400">
+                    / {submissionResult.score.max} pts ({submissionResult.score.percentage ?? 0}%)
+                  </span>
+                </p>
+
+                {/* Pass/Fail Status Banner */}
+                {submissionResult.score.isPassed !== null && submissionResult.score.isPassed !== undefined && (
+                  <div className="mt-2.5 pt-2.5 border-t border-purple-200/60 dark:border-purple-800/60">
+                    <span
+                      className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
+                        submissionResult.score.isPassed
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                          : 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+                      }`}
+                    >
+                      {submissionResult.score.isPassed ? 'PASSED' : 'NOT PASSED'}
+                    </span>
+                    {submissionResult.score.customMessage && (
+                      <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 font-medium">
+                        {submissionResult.score.customMessage}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Question-level Review Breakdown */}
+              {submissionResult.score.breakdown && submissionResult.score.breakdown.length > 0 && (
+                <div className="text-left space-y-3 pt-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                    Question Review
+                  </h4>
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {submissionResult.score.breakdown.map((item: any, iIdx: number) => (
+                      <div
+                        key={iIdx}
+                        className={`p-3 rounded-xl border text-xs space-y-1.5 ${
+                          item.isCorrect
+                            ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60'
+                            : 'bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800/60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-gray-800 dark:text-gray-200">
+                            {item.questionTitle || `Question ${iIdx + 1}`}
+                          </span>
+                          {item.score !== undefined && (
+                            <span
+                              className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${
+                                item.isCorrect
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              {item.score} / {item.maxPoints} pts
+                            </span>
+                          )}
+                        </div>
+
+                        <div>
+                          <span className="text-gray-400">Your answer: </span>
+                          <span className="font-medium text-gray-700 dark:text-gray-300">
+                            {Array.isArray(item.submittedValue)
+                              ? item.submittedValue.join(', ')
+                              : String(item.submittedValue ?? 'None')}
+                          </span>
+                        </div>
+
+                        {item.correctAnswer !== undefined && !item.isCorrect && (
+                          <div className="text-emerald-700 dark:text-emerald-300">
+                            <span className="font-semibold">Correct answer: </span>
+                            <span>
+                              {Array.isArray(item.correctAnswer)
+                                ? item.correctAnswer.join(', ')
+                                : typeof item.correctAnswer === 'object' && item.correctAnswer !== null
+                                  ? JSON.stringify(item.correctAnswer)
+                                  : String(item.correctAnswer)}
+                            </span>
+                          </div>
+                        )}
+
+                        {item.feedback && (
+                          <p className="text-[11px] text-gray-600 dark:text-gray-400 italic bg-white/70 dark:bg-gray-900/60 p-1.5 rounded">
+                            💬 Feedback: {item.feedback}
+                          </p>
+                        )}
+
+                        {item.explanation && (
+                          <p className="text-[11px] text-purple-700 dark:text-purple-300 bg-purple-50/70 dark:bg-purple-950/30 p-1.5 rounded">
+                            💡 Explanation: {item.explanation}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1243,6 +1350,25 @@ function PublicFormContent() {
                   <span className="inline-block mt-1 text-[11px] font-bold text-purple-600">
                     {q.quizPoints} {q.quizPoints === 1 ? 'point' : 'points'}
                   </span>
+                )}
+
+                {/* Inline Question Image (if configured on standard question types) */}
+                {q.config?.imageUrl && q.type !== 'IMAGE_BLOCK' && (
+                  <div
+                    className={`pt-2 flex flex-col ${
+                      q.config.imageAlignment === 'left'
+                        ? 'items-start'
+                        : q.config.imageAlignment === 'right'
+                          ? 'items-end'
+                          : 'items-center'
+                    }`}
+                  >
+                    <img
+                      src={q.config.imageUrl}
+                      alt={q.config.imageAlt || q.title || 'Question image'}
+                      className="rounded-xl max-h-80 w-auto max-w-full object-contain border border-gray-200 dark:border-gray-800 shadow-sm"
+                    />
+                  </div>
                 )}
 
                 {/* Autofill / Target Indicator Badge */}
@@ -1644,7 +1770,16 @@ function PublicFormContent() {
                             />
                           </div>
                         ) : (
-                          <span>{opt.label}</span>
+                          <div className="flex-1 flex items-center justify-between gap-3">
+                            <span>{opt.label}</span>
+                            {opt.imageUrl && (
+                              <img
+                                src={opt.imageUrl}
+                                alt={opt.label}
+                                className="h-14 w-20 object-cover rounded-lg border border-gray-200 dark:border-gray-700 shadow-xs shrink-0"
+                              />
+                            )}
+                          </div>
                         )}
                       </div>
                     );
@@ -1781,7 +1916,16 @@ function PublicFormContent() {
                             />
                           </div>
                         ) : (
-                          <span>{opt.label}</span>
+                          <div className="flex-1 flex items-center justify-between gap-3">
+                            <span>{opt.label}</span>
+                            {opt.imageUrl && (
+                              <img
+                                src={opt.imageUrl}
+                                alt={opt.label}
+                                className="h-14 w-20 object-cover rounded-lg border border-gray-200 dark:border-gray-700 shadow-xs shrink-0"
+                              />
+                            )}
+                          </div>
                         )}
                       </div>
                     );
@@ -1846,7 +1990,16 @@ function PublicFormContent() {
                       <SelectContent>
                         {q.options?.map((opt: any) => (
                           <SelectItem key={opt.id || opt.label} value={opt.label}>
-                            {opt.label}
+                            <div className="flex items-center gap-2">
+                              {opt.imageUrl && (
+                                <img
+                                  src={opt.imageUrl}
+                                  alt={opt.label}
+                                  className="h-5 w-7 object-cover rounded shrink-0 border border-gray-200 dark:border-gray-700"
+                                />
+                              )}
+                              <span>{opt.label}</span>
+                            </div>
                           </SelectItem>
                         ))}
                       </SelectContent>

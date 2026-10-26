@@ -37,8 +37,8 @@ export default function SettingsTab({
   return (
     <div className="max-w-3xl mx-auto py-6 px-4 space-y-6">
       {/* 1. Quiz Settings */}
-      <Card className="border-gray-200 dark:border-gray-800 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+      <Card className="border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 bg-gradient-to-r from-amber-50/40 to-transparent dark:from-amber-950/20">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl bg-amber-100 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center">
               <Award className="h-5 w-5" />
@@ -52,6 +52,179 @@ export default function SettingsTab({
           </div>
           <Switch checked={isQuiz} onCheckedChange={onToggleQuiz} />
         </CardHeader>
+
+        {isQuiz && (
+          <CardContent className="space-y-5 pt-3 text-xs border-t border-gray-100 dark:border-gray-800">
+            {/* Release Grades Setting */}
+            <div className="space-y-2">
+              <label className="font-bold text-gray-800 dark:text-gray-200 block">
+                Release Grades
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div
+                  onClick={() => onChangeSettings({ quizReleaseGrade: 'IMMEDIATE' })}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col gap-1 ${
+                    (settings?.quizReleaseGrade ?? 'IMMEDIATE') === 'IMMEDIATE'
+                      ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
+                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                      Immediately after each submission
+                    </span>
+                    {(settings?.quizReleaseGrade ?? 'IMMEDIATE') === 'IMMEDIATE' && (
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Respondents view their score and results instantly upon submitting
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => onChangeSettings({ quizReleaseGrade: 'AFTER_REVIEW' })}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col gap-1 ${
+                    settings?.quizReleaseGrade === 'AFTER_REVIEW'
+                      ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
+                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                      Later, after manual review
+                    </span>
+                    {settings?.quizReleaseGrade === 'AFTER_REVIEW' && (
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Withhold scores until you manually review and release grades from the Responses tab
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Respondent Review Settings */}
+            <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+              <label className="font-bold text-gray-800 dark:text-gray-200 block">
+                Respondent Results Display
+              </label>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-gray-800 dark:text-gray-200">Show points earned</p>
+                  <p className="text-gray-500 text-[11px]">
+                    Display total points and points received for each question
+                  </p>
+                </div>
+                <Switch
+                  checked={settings?.quizShowPointsEarned ?? true}
+                  onCheckedChange={(checked) => onChangeSettings({ quizShowPointsEarned: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-gray-800 dark:text-gray-200">Show correct answers</p>
+                  <p className="text-gray-500 text-[11px]">
+                    Identify correct answers after grades are released
+                  </p>
+                </div>
+                <Switch
+                  checked={settings?.quizShowCorrectAnswers ?? true}
+                  onCheckedChange={(checked) => onChangeSettings({ quizShowCorrectAnswers: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-gray-800 dark:text-gray-200">Show feedback & explanations</p>
+                  <p className="text-gray-500 text-[11px]">
+                    Display question-level explanations and feedback for answers
+                  </p>
+                </div>
+                <Switch
+                  checked={settings?.quizShowFeedback ?? true}
+                  onCheckedChange={(checked) => onChangeSettings({ quizShowFeedback: checked })}
+                />
+              </div>
+            </div>
+
+            {/* Default Points & Passing Threshold */}
+            <div className="pt-2 border-t border-gray-100 dark:border-gray-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                  Default Points per Question
+                </label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={settings?.quizDefaultPoints ?? 1}
+                  onChange={(e) =>
+                    onChangeSettings({ quizDefaultPoints: parseInt(e.target.value, 10) || 0 })
+                  }
+                  className="h-8 text-xs w-28"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">Default assigned to newly added questions</p>
+              </div>
+
+              <div>
+                <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                  Passing Score Threshold (%)
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="e.g. 70"
+                    value={settings?.quizPassPercentage ?? ''}
+                    onChange={(e) =>
+                      onChangeSettings({
+                        quizPassPercentage: e.target.value === '' ? null : Number(e.target.value),
+                      })
+                    }
+                    className="h-8 text-xs w-28"
+                  />
+                  <span className="text-xs text-gray-500 font-medium">%</span>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">Leave empty to disable pass/fail grading</p>
+              </div>
+            </div>
+
+            {/* Custom Pass/Fail Messages */}
+            {settings?.quizPassPercentage !== null && settings?.quizPassPercentage !== undefined && (
+              <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+                <div>
+                  <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                    Custom Pass Message
+                  </label>
+                  <Input
+                    type="text"
+                    value={settings?.quizPassMessage || 'Congratulations! You passed the quiz.'}
+                    onChange={(e) => onChangeSettings({ quizPassMessage: e.target.value })}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                    Custom Fail Message
+                  </label>
+                  <Input
+                    type="text"
+                    value={
+                      settings?.quizFailMessage ||
+                      'Unfortunately, you did not reach the passing score.'
+                    }
+                    onChange={(e) => onChangeSettings({ quizFailMessage: e.target.value })}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+            )}
+          </CardContent>
+        )}
       </Card>
 
       {/* 2. Responses Settings */}

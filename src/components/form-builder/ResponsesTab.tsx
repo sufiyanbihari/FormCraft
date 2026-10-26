@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import {
   Download,
   Users,
@@ -24,6 +25,10 @@ import {
   FileText,
   Loader2,
   ExternalLink,
+  CheckCircle2,
+  Save,
+  Send,
+  AlertCircle,
 } from 'lucide-react';
 
 function renderSingleFileCard(val: any, idx?: number) {
@@ -180,6 +185,89 @@ export default function ResponsesTab({
   const [isLoading, setIsLoading] = useState(true);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string>('');
   const [individualIndex, setIndividualIndex] = useState(0);
+
+  // Manual grading state for quiz submissions
+  const [editingScores, setEditingScores] = useState<Record<string, number>>({});
+  const [editingFeedback, setEditingFeedback] = useState<Record<string, string>>({});
+  const [isSavingGrading, setIsSavingGrading] = useState(false);
+  const [gradingSuccessMessage, setGradingSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const cur = submissions[individualIndex];
+    if (cur?.answers) {
+      const scores: Record<string, number> = {};
+      const feedback: Record<string, string> = {};
+      cur.answers.forEach((ans: any) => {
+        scores[ans.id] = ans.score ?? 0;
+        feedback[ans.id] = ans.reviewerFeedback ?? '';
+      });
+      setEditingScores(scores);
+      setEditingFeedback(feedback);
+      setGradingSuccessMessage(null);
+    }
+  }, [individualIndex, submissions]);
+
+  const handleSaveGrading = async () => {
+    const cur = submissions[individualIndex];
+    if (!cur) return;
+    setIsSavingGrading(true);
+    setGradingSuccessMessage(null);
+    try {
+      const answerUpdates = (cur.answers || []).map((ans: any) => ({
+        answerId: ans.id,
+        score: editingScores[ans.id] !== undefined ? editingScores[ans.id] : (ans.score ?? 0),
+        reviewerFeedback:
+          editingFeedback[ans.id] !== undefined
+            ? editingFeedback[ans.id]
+            : (ans.reviewerFeedback ?? ''),
+      }));
+      const res = await fetch(`/api/forms/${formId}/responses/${cur.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answerUpdates }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSubmissions((prev) =>
+          prev.map((s, idx) => (idx === individualIndex ? data.submission : s))
+        );
+        setGradingSuccessMessage('Manual grades and feedback saved successfully!');
+        setTimeout(() => setGradingSuccessMessage(null), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to save manual grading:', err);
+    } finally {
+      setIsSavingGrading(false);
+    }
+  };
+
+  const handleToggleGradeRelease = async () => {
+    const cur = submissions[individualIndex];
+    if (!cur) return;
+    setIsSavingGrading(true);
+    try {
+      const newStatus = !cur.isGradeReleased;
+      const res = await fetch(`/api/forms/${formId}/responses/${cur.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isGradeReleased: newStatus }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSubmissions((prev) =>
+          prev.map((s, idx) => (idx === individualIndex ? data.submission : s))
+        );
+        setGradingSuccessMessage(
+          newStatus ? 'Grade released to respondent!' : 'Grade withheld for review.'
+        );
+        setTimeout(() => setGradingSuccessMessage(null), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to toggle grade release:', err);
+    } finally {
+      setIsSavingGrading(false);
+    }
+  };
 
   const fetchResponsesData = async () => {
     try {
@@ -364,27 +452,54 @@ export default function ResponsesTab({
           {subView === 'summary' && (
             <div className="space-y-6">
               {/* Quiz Score Card if Quiz */}
-              {isQuiz && analytics?.summary?.avgScore !== undefined && (
-                <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl p-6 shadow-sm">
-                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 mb-2">
-                    <Award className="h-5 w-5" />
-                    <h3 className="font-bold text-sm">Quiz Insights</h3>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-500">Average Score</p>
-                      <p className="text-2xl font-extrabold text-amber-900 dark:text-amber-200">
-                        {analytics.summary.avgScore} / {analytics.summary.maxQuizScore} pts
-                      </p>
+              {isQuiz && (
+                (() => {
+                  const quizScores = submissions.map((s) => s.totalScore ?? 0);
+                  const highestScore = quizScores.length > 0 ? Math.max(...quizScores) : 0;
+                  const lowestScore = quizScores.length > 0 ? Math.min(...quizScores) : 0;
+                  const releasedCount = submissions.filter((s) => s.isGradeReleased).length;
+                  const pendingCount = submissions.filter((s) => !s.isGradeReleased).length;
+
+                  return (
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl p-6 shadow-sm">
+                      <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 mb-2">
+                        <Award className="h-5 w-5" />
+                        <h3 className="font-bold text-sm">Quiz Insights</h3>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <div>
+                          <p className="text-xs text-gray-500">Average Score</p>
+                          <p className="text-2xl font-extrabold text-amber-900 dark:text-amber-200">
+                            {analytics?.summary?.avgScore ?? 0} / {analytics?.summary?.maxQuizScore ?? 0} pts
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">High / Low Score</p>
+                          <p className="text-2xl font-extrabold text-amber-900 dark:text-amber-200">
+                            {highestScore} / {lowestScore} pts
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Total Graded</p>
+                          <p className="text-2xl font-extrabold text-amber-900 dark:text-amber-200">
+                            {totalCount} submissions
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Release Status</p>
+                          <p className="text-sm font-bold text-amber-900 dark:text-amber-200 mt-1">
+                            <span className="text-emerald-700 dark:text-emerald-400 font-extrabold">{releasedCount} Released</span>
+                            {pendingCount > 0 && (
+                              <span className="text-amber-700 dark:text-amber-400 block text-xs font-semibold">
+                                ({pendingCount} pending review)
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Total Graded</p>
-                      <p className="text-2xl font-extrabold text-amber-900 dark:text-amber-200">
-                        {totalCount} submissions
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()
               )}
 
               {/* Submissions Over Time Chart */}
@@ -892,11 +1007,32 @@ export default function ResponsesTab({
                       </Button>
                     )}
                     {isQuiz && (
-                      <div className="text-right">
-                        <span className="text-sm font-extrabold text-purple-600">
-                          Score: {submissions[individualIndex].totalScore ?? 0} /{' '}
-                          {submissions[individualIndex].maxScore ?? 0}
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                            submissions[individualIndex].isGradeReleased
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                          }`}
+                        >
+                          {submissions[individualIndex].isGradeReleased ? 'Released' : 'Pending Review'}
                         </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleToggleGradeRelease}
+                          disabled={isSavingGrading}
+                          className="text-xs h-8 font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40"
+                        >
+                          <Send className="h-3 w-3 mr-1" />
+                          {submissions[individualIndex].isGradeReleased ? 'Withhold Grade' : 'Release Grade'}
+                        </Button>
+                        <div className="text-right pl-1">
+                          <span className="text-sm font-extrabold text-purple-600">
+                            Score: {submissions[individualIndex].totalScore ?? 0} /{' '}
+                            {submissions[individualIndex].maxScore ?? 0}
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -943,29 +1079,86 @@ export default function ResponsesTab({
                   {submissions[individualIndex].answers.map((ans: any) => (
                     <div
                       key={ans.id}
-                      className="p-4 rounded-xl bg-gray-50/70 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800 space-y-1.5"
+                      className="p-4 rounded-xl bg-gray-50/70 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800 space-y-2"
                     >
-                      <div className="flex items-center justify-between">
-                        <h5 className="font-semibold text-xs text-gray-700 dark:text-gray-300">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <h5 className="font-semibold text-xs text-gray-700 dark:text-gray-300 flex-1">
                           {ans.question?.title || 'Question'}
                         </h5>
-                        {ans.isCorrect !== null && (
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              ans.isCorrect
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            {ans.score || 0} pts
-                          </span>
+                        {isQuiz && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[11px] text-gray-400">Points:</span>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={editingScores[ans.id] ?? ans.score ?? 0}
+                              onChange={(e) =>
+                                setEditingScores((prev) => ({
+                                  ...prev,
+                                  [ans.id]: Number(e.target.value) || 0,
+                                }))
+                              }
+                              className="w-16 h-7 text-xs font-bold text-center bg-white dark:bg-gray-900"
+                            />
+                            <span className="text-xs text-gray-400">
+                              / {ans.question?.quizPoints || 0} pts
+                            </span>
+                          </div>
                         )}
                       </div>
                       <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
                         {renderAnswerValue(ans.value)}
                       </div>
+
+                      {/* Reviewer Feedback Input */}
+                      {isQuiz && (
+                        <div className="pt-2 border-t border-gray-200/60 dark:border-gray-700/60 flex items-center gap-2">
+                          <span className="text-[11px] text-gray-400 shrink-0">Feedback:</span>
+                          <Input
+                            type="text"
+                            placeholder="Add reviewer feedback for respondent..."
+                            value={editingFeedback[ans.id] ?? ans.reviewerFeedback ?? ''}
+                            onChange={(e) =>
+                              setEditingFeedback((prev) => ({
+                                ...prev,
+                                [ans.id]: e.target.value,
+                              }))
+                            }
+                            className="h-7 text-xs bg-white dark:bg-gray-900 flex-1"
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
+
+                  {/* Manual Grade Save Bar */}
+                  {isQuiz && (
+                    <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-800">
+                      {gradingSuccessMessage ? (
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5">
+                          <CheckCircle2 className="h-4 w-4" /> {gradingSuccessMessage}
+                        </p>
+                      ) : (
+                        <span className="text-[11px] text-gray-400">
+                          Adjust points or feedback above, then click save.
+                        </span>
+                      )}
+
+                      <Button
+                        size="sm"
+                        onClick={handleSaveGrading}
+                        disabled={isSavingGrading}
+                        className="bg-purple-600 hover:bg-purple-700 text-white text-xs h-8"
+                      >
+                        {isSavingGrading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                        ) : (
+                          <Save className="h-3.5 w-3.5 mr-1.5" />
+                        )}
+                        Save Grading
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

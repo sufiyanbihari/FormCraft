@@ -100,6 +100,7 @@ export async function PATCH(
                 orderIndex: opt.orderIndex ?? idx,
                 isOther: Boolean(opt.isOther),
                 goToSectionId: opt.goToSectionId || null,
+                imageUrl: opt.imageUrl || null,
               };
             }),
           });

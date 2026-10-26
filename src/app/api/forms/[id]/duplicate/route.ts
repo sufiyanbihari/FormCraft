@@ -82,6 +82,14 @@ export async function POST(
                   allowResponseEditing: original.settings.allowResponseEditing,
                   showSummaryToRespondents: original.settings.showSummaryToRespondents,
                   accessMode: original.settings.accessMode,
+                  quizReleaseGrade: (original.settings as any).quizReleaseGrade,
+                  quizShowCorrectAnswers: (original.settings as any).quizShowCorrectAnswers,
+                  quizShowPointsEarned: (original.settings as any).quizShowPointsEarned,
+                  quizShowFeedback: (original.settings as any).quizShowFeedback,
+                  quizPassPercentage: (original.settings as any).quizPassPercentage,
+                  quizPassMessage: (original.settings as any).quizPassMessage,
+                  quizFailMessage: (original.settings as any).quizFailMessage,
+                  quizDefaultPoints: (original.settings as any).quizDefaultPoints,
                 },
               }
             : undefined,
@@ -126,6 +134,7 @@ export async function POST(
                 orderIndex: opt.orderIndex,
                 isOther: opt.isOther,
                 goToSectionId: opt.goToSectionId,
+                imageUrl: opt.imageUrl,
               })),
             });
           }

@@ -37,6 +37,15 @@ export const formSettingsSchema = z.object({
   allowResponseEditing: z.boolean().default(false),
   showSummaryToRespondents: z.boolean().default(false),
   accessMode: z.enum(['PUBLIC', 'AUTHENTICATED', 'RESTRICTED']).default('PUBLIC'),
+  // Advanced Quiz Settings
+  quizReleaseGrade: z.enum(['IMMEDIATE', 'AFTER_REVIEW']).optional().default('IMMEDIATE'),
+  quizShowCorrectAnswers: z.boolean().optional().default(true),
+  quizShowPointsEarned: z.boolean().optional().default(true),
+  quizShowFeedback: z.boolean().optional().default(true),
+  quizPassPercentage: z.number().min(0).max(100).nullable().optional(),
+  quizPassMessage: z.string().optional().default('Congratulations! You passed the quiz.'),
+  quizFailMessage: z.string().optional().default('Unfortunately, you did not reach the passing score.'),
+  quizDefaultPoints: z.number().int().min(0).optional().default(1),
 });
 
 export const createFormSchema = z.object({

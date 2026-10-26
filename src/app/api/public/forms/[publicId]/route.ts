@@ -94,6 +94,7 @@ export async function GET(
           orderIndex: opt.orderIndex,
           isOther: opt.isOther,
           goToSectionId: opt.goToSectionId,
+          imageUrl: opt.imageUrl,
         })),
       })),
     }));

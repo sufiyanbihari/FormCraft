@@ -32,6 +32,7 @@ export const questionOptionSchema = z.object({
   orderIndex: z.number().int().default(0),
   isOther: z.boolean().default(false),
   goToSectionId: z.string().nullable().optional(),
+  imageUrl: z.string().nullable().optional(),
 });
 
 export const questionValidationSchema = z.object({
@@ -59,6 +60,7 @@ export const questionConfigSchema = z.object({
   maxFiles: z.number().int().default(1),
   embedUrl: z.string().optional(),
   imageUrl: z.string().optional(),
+  imageAlt: z.string().optional(),
   videoUrl: z.string().optional(),
   imageAlignment: z.enum(['left', 'center', 'right']).optional().default('center'),
   ratingMax: z.number().int().default(5),

@@ -102,6 +102,7 @@ export interface QuestionData {
     orderIndex: number;
     isOther?: boolean;
     goToSectionId?: string | null;
+    imageUrl?: string | null;
   }[];
 }
 
@@ -279,6 +280,11 @@ export default function QuestionCard({
   const [showVideoLinkInput, setShowVideoLinkInput] = useState(false);
   const [isDraggingVideo, setIsDraggingVideo] = useState(false);
   const videoFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const [uploadingOptionIdx, setUploadingOptionIdx] = useState<number | null>(null);
+  const [newAcceptedAnswer, setNewAcceptedAnswer] = useState('');
+  const optionFileInputRefs = React.useRef<Record<number, HTMLInputElement | null>>({});
+  const inlineQuestionImageInputRef = React.useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setTempImageUrl(question.config?.imageUrl || '');
@@ -525,13 +531,27 @@ export default function QuestionCard({
 
   // Option operations
   const handleOptionChange = (idx: number, newLabel: string) => {
+    const oldLabel = question.options[idx]?.label;
     const newOptions = [...question.options];
     newOptions[idx] = {
       ...newOptions[idx],
       label: newLabel,
       value: newLabel,
     };
-    onChange({ options: newOptions });
+
+    let updatedQuizAnswer = question.quizAnswer ? { ...question.quizAnswer } : undefined;
+    if (updatedQuizAnswer) {
+      if (updatedQuizAnswer.correctValue === oldLabel) {
+        updatedQuizAnswer.correctValue = newLabel;
+      }
+      if (Array.isArray(updatedQuizAnswer.correctValues)) {
+        updatedQuizAnswer.correctValues = updatedQuizAnswer.correctValues.map((v: string) =>
+          v === oldLabel ? newLabel : v
+        );
+      }
+    }
+
+    onChange({ options: newOptions, quizAnswer: updatedQuizAnswer });
   };
 
   const handleAddOption = (isOther = false) => {
@@ -544,6 +564,7 @@ export default function QuestionCard({
         orderIndex: nextOrder,
         isOther,
         goToSectionId: null,
+        imageUrl: null,
       },
     ];
     onChange({ options: newOptions });
@@ -551,8 +572,105 @@ export default function QuestionCard({
 
   const handleDeleteOption = (idx: number) => {
     if (question.options.length <= 1) return;
+    const deletedLabel = question.options[idx]?.label;
     const newOptions = question.options.filter((_, i) => i !== idx);
+
+    let updatedQuizAnswer = question.quizAnswer ? { ...question.quizAnswer } : undefined;
+    if (updatedQuizAnswer) {
+      if (updatedQuizAnswer.correctValue === deletedLabel) {
+        updatedQuizAnswer.correctValue = undefined;
+      }
+      if (Array.isArray(updatedQuizAnswer.correctValues)) {
+        updatedQuizAnswer.correctValues = updatedQuizAnswer.correctValues.filter(
+          (v: string) => v !== deletedLabel
+        );
+      }
+    }
+
+    onChange({ options: newOptions, quizAnswer: updatedQuizAnswer });
+  };
+
+  const handleOptionImageUpload = async (idx: number, file: File) => {
+    setUploadingOptionIdx(idx);
+    try {
+      const data = await uploadFile(file, { maxSizeMb: 10 });
+      if (data && data.publicUrl) {
+        const newOptions = [...question.options];
+        newOptions[idx] = {
+          ...newOptions[idx],
+          imageUrl: data.publicUrl,
+        };
+        onChange({ options: newOptions });
+      }
+    } catch (err: any) {
+      console.error('Failed to upload option image:', err);
+    } finally {
+      setUploadingOptionIdx(null);
+    }
+  };
+
+  const handleRemoveOptionImage = (idx: number) => {
+    const newOptions = [...question.options];
+    newOptions[idx] = {
+      ...newOptions[idx],
+      imageUrl: null,
+    };
     onChange({ options: newOptions });
+  };
+
+  const handleQuestionInlineImageUpload = async (file: File) => {
+    setIsUploadingImage(true);
+    try {
+      const data = await uploadFile(file, { maxSizeMb: 25 });
+      if (data && data.publicUrl) {
+        onChange({
+          config: {
+            ...question.config,
+            imageUrl: data.publicUrl,
+            imageAlt: file.name.replace(/\.[^/.]+$/, ''),
+          },
+        });
+      }
+    } catch (err: any) {
+      console.error('Failed to upload question image:', err);
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const handleRemoveQuestionInlineImage = () => {
+    onChange({
+      config: {
+        ...question.config,
+        imageUrl: undefined,
+        imageAlt: undefined,
+      },
+    });
+  };
+
+  const handleAddAcceptedAnswer = () => {
+    const trimmed = newAcceptedAnswer.trim();
+    if (!trimmed) return;
+    const currentList: string[] = question.quizAnswer?.acceptedAnswers || [];
+    if (!currentList.includes(trimmed)) {
+      onChange({
+        quizAnswer: {
+          ...question.quizAnswer,
+          acceptedAnswers: [...currentList, trimmed],
+        },
+      });
+    }
+    setNewAcceptedAnswer('');
+  };
+
+  const handleRemoveAcceptedAnswer = (ansToRemove: string) => {
+    const currentList: string[] = question.quizAnswer?.acceptedAnswers || [];
+    onChange({
+      quizAnswer: {
+        ...question.quizAnswer,
+        acceptedAnswers: currentList.filter((a) => a !== ansToRemove),
+      },
+    });
   };
 
   const handleBranchingChange = (optIdx: number, targetSectionId: string | null) => {
@@ -568,7 +686,7 @@ export default function QuestionCard({
   const handleToggleCorrectOption = (optLabel: string) => {
     if (question.type === 'MULTIPLE_CHOICE' || question.type === 'DROPDOWN') {
       onChange({
-        quizAnswer: { correctValue: optLabel },
+        quizAnswer: { ...question.quizAnswer, correctValue: optLabel },
       });
     } else if (question.type === 'CHECKBOXES') {
       const currentVals: string[] = question.quizAnswer?.correctValues || [];
@@ -576,7 +694,7 @@ export default function QuestionCard({
         ? currentVals.filter((v) => v !== optLabel)
         : [...currentVals, optLabel];
       onChange({
-        quizAnswer: { correctValues: updated },
+        quizAnswer: { ...question.quizAnswer, correctValues: updated },
       });
     }
   };
@@ -655,14 +773,38 @@ export default function QuestionCard({
       <div className="p-6 pt-2 space-y-4">
         {/* Top Row: Title & Type Selector */}
         <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-          <div className="flex-1 w-full">
+          <div className="flex-1 w-full flex items-center gap-2">
             <Input
               type="text"
               value={question.title}
               onChange={(e) => onChange({ title: e.target.value })}
               placeholder="Question title"
-              className="text-base font-semibold border-b border-t-0 border-x-0 rounded-none px-1 h-10 focus:border-purple-600 focus:ring-0 bg-transparent"
+              className="text-base font-semibold border-b border-t-0 border-x-0 rounded-none px-1 h-10 focus:border-purple-600 focus:ring-0 bg-transparent flex-1"
             />
+            {qType !== 'IMAGE_BLOCK' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => inlineQuestionImageInputRef.current?.click()}
+                  disabled={isUploadingImage}
+                  className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 rounded-lg transition-colors shrink-0"
+                  title="Insert question image"
+                >
+                  <ImageIcon className="h-4 w-4" />
+                </button>
+                <input
+                  type="file"
+                  ref={inlineQuestionImageInputRef}
+                  accept="image/png,image/jpeg,image/webp,image/jpg"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleQuestionInlineImageUpload(f);
+                    e.target.value = '';
+                  }}
+                />
+              </>
+            )}
           </div>
 
           <div className="w-full sm:w-56 shrink-0">
@@ -712,6 +854,98 @@ export default function QuestionCard({
           />
         )}
 
+        {/* Question Inline Image (for standard question types) */}
+        {question.config?.imageUrl && qType !== 'IMAGE_BLOCK' && (
+          <div className="p-3 bg-gray-50/80 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700 space-y-2">
+            <div
+              className={`flex flex-col ${
+                question.config.imageAlignment === 'left'
+                  ? 'items-start'
+                  : question.config.imageAlignment === 'right'
+                    ? 'items-end'
+                    : 'items-center'
+              }`}
+            >
+              <div className="relative group/inlineimg">
+                <img
+                  src={question.config.imageUrl}
+                  alt={question.config.imageAlt || 'Question image'}
+                  className="rounded-lg max-h-60 w-auto object-contain border border-gray-200 dark:border-gray-700 bg-white"
+                />
+                <button
+                  type="button"
+                  onClick={handleRemoveQuestionInlineImage}
+                  className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1 opacity-90 hover:opacity-100 shadow-sm"
+                  title="Remove question image"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-1 border-t border-gray-200/60 dark:border-gray-700/60 flex-wrap">
+              <div className="flex items-center gap-1 text-xs">
+                <span className="text-[11px] text-gray-500 mr-1">Align:</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange({ config: { ...question.config, imageAlignment: 'left' } })
+                  }
+                  className={`p-1 rounded ${
+                    !question.config.imageAlignment || question.config.imageAlignment === 'left'
+                      ? 'bg-purple-100 text-purple-700 font-bold'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                  title="Align left"
+                >
+                  <AlignLeft className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange({ config: { ...question.config, imageAlignment: 'center' } })
+                  }
+                  className={`p-1 rounded ${
+                    question.config.imageAlignment === 'center'
+                      ? 'bg-purple-100 text-purple-700 font-bold'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                  title="Align center"
+                >
+                  <AlignCenter className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange({ config: { ...question.config, imageAlignment: 'right' } })
+                  }
+                  className={`p-1 rounded ${
+                    question.config.imageAlignment === 'right'
+                      ? 'bg-purple-100 text-purple-700 font-bold'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                  title="Align right"
+                >
+                  <AlignRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-1 max-w-xs">
+                <span className="text-[11px] text-gray-400 shrink-0">Alt:</span>
+                <Input
+                  type="text"
+                  placeholder="Image description (for accessibility)"
+                  value={question.config.imageAlt || ''}
+                  onChange={(e) =>
+                    onChange({ config: { ...question.config, imageAlt: e.target.value } })
+                  }
+                  className="h-6 text-[11px] bg-white dark:bg-gray-900"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Question Type Body Renderers */}
 
         {/* 1. Short Answer */}
@@ -735,77 +969,140 @@ export default function QuestionCard({
         {/* 3. Multiple Choice, Checkboxes, Dropdown */}
         {isChoiceType && (
           <div className="space-y-2 py-2">
-            {question.options.map((opt, idx) => (
-              <div key={idx} className="flex items-center gap-3 group">
-                {qType === 'MULTIPLE_CHOICE' ? (
-                  <Circle className="h-4 w-4 text-gray-400 shrink-0" />
-                ) : qType === 'CHECKBOXES' ? (
-                  <Square className="h-4 w-4 text-gray-400 shrink-0" />
-                ) : (
-                  <span className="text-xs text-gray-400 font-semibold w-4 text-center">
-                    {idx + 1}.
-                  </span>
-                )}
+            {question.options.map((opt, idx) => {
+              const isMarkedCorrect = isQuiz && (
+                qType === 'CHECKBOXES'
+                  ? (question.quizAnswer?.correctValues || []).includes(opt.label)
+                  : question.quizAnswer?.correctValue === opt.label
+              );
 
-                {opt.isOther ? (
-                  <div className="flex items-center gap-2 flex-1 px-2 py-1">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Other...
+              return (
+                <div key={idx} className="flex items-center gap-3 group">
+                  {qType === 'MULTIPLE_CHOICE' ? (
+                    <Circle className="h-4 w-4 text-gray-400 shrink-0" />
+                  ) : qType === 'CHECKBOXES' ? (
+                    <Square className="h-4 w-4 text-gray-400 shrink-0" />
+                  ) : (
+                    <span className="text-xs text-gray-400 font-semibold w-4 text-center">
+                      {idx + 1}.
                     </span>
-                    <span className="text-[11px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 px-2 py-0.5 rounded-md font-medium">
-                      Respondent text input enabled
-                    </span>
-                  </div>
-                ) : (
-                  <Input
-                    type="text"
-                    value={opt.label}
-                    onChange={(e) => handleOptionChange(idx, e.target.value)}
-                    onBlur={() => {
-                      if (!opt.label.trim()) {
-                        handleOptionChange(idx, `Option ${idx + 1}`);
-                      }
-                    }}
-                    className="h-8 text-sm border-transparent hover:border-gray-200 focus:border-purple-600 rounded-md px-2 flex-1"
-                  />
-                )}
+                  )}
 
-                {/* Conditional Branching dropdown */}
-                {showBranching && (
-                  <div className="w-44">
-                    <Select
-                      value={opt.goToSectionId || 'CONTINUE'}
-                      onValueChange={(val) =>
-                        handleBranchingChange(idx, val === 'CONTINUE' ? null : val)
-                      }
+                  {opt.isOther ? (
+                    <div className="flex items-center gap-2 flex-1 px-2 py-1">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Other...
+                      </span>
+                      <span className="text-[11px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 px-2 py-0.5 rounded-md font-medium">
+                        Respondent text input enabled
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex items-center gap-2">
+                      <Input
+                        type="text"
+                        value={opt.label}
+                        onChange={(e) => handleOptionChange(idx, e.target.value)}
+                        onBlur={() => {
+                          if (!opt.label.trim()) {
+                            handleOptionChange(idx, `Option ${idx + 1}`);
+                          }
+                        }}
+                        className="h-8 text-sm border-transparent hover:border-gray-200 focus:border-purple-600 rounded-md px-2 flex-1"
+                      />
+
+                      {/* Correct answer badge indicator for quiz mode */}
+                      {isMarkedCorrect && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 shrink-0">
+                          <CheckCircle2 className="h-3 w-3" /> Correct
+                        </span>
+                      )}
+
+                      {/* Option Image thumbnail or upload button */}
+                      {opt.imageUrl ? (
+                        <div className="relative group/optimg shrink-0">
+                          <img
+                            src={opt.imageUrl}
+                            alt={opt.label}
+                            className="h-8 w-12 object-cover rounded border border-gray-200 dark:border-gray-700 shadow-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveOptionImage(idx)}
+                            className="absolute -top-1.5 -right-1.5 bg-red-600 text-white rounded-full p-0.5 opacity-0 group-hover/optimg:opacity-100 transition-opacity shadow-sm"
+                            title="Remove option image"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => optionFileInputRefs.current[idx]?.click()}
+                          disabled={uploadingOptionIdx === idx}
+                          className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 rounded-md transition-colors shrink-0"
+                          title="Add image to option"
+                        >
+                          {uploadingOptionIdx === idx ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
+                          ) : (
+                            <ImageIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                      )}
+                      <input
+                        type="file"
+                        ref={(el) => {
+                          optionFileInputRefs.current[idx] = el;
+                        }}
+                        accept="image/png,image/jpeg,image/webp,image/jpg"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleOptionImageUpload(idx, f);
+                          e.target.value = '';
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Conditional Branching dropdown */}
+                  {showBranching && (
+                    <div className="w-44">
+                      <Select
+                        value={opt.goToSectionId || 'CONTINUE'}
+                        onValueChange={(val) =>
+                          handleBranchingChange(idx, val === 'CONTINUE' ? null : val)
+                        }
+                      >
+                        <SelectTrigger className="h-7 text-[11px] bg-gray-50">
+                          <SelectValue placeholder="Continue to next" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CONTINUE">Continue to next</SelectItem>
+                          <SelectItem value="SUBMIT">Submit form</SelectItem>
+                          {sections.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              Go to {s.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Delete option button */}
+                  {question.options.length > 1 && (
+                    <button
+                      onClick={() => handleDeleteOption(idx)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-opacity p-1 shrink-0"
                     >
-                      <SelectTrigger className="h-7 text-[11px] bg-gray-50">
-                        <SelectValue placeholder="Continue to next" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="CONTINUE">Continue to next</SelectItem>
-                        <SelectItem value="SUBMIT">Submit form</SelectItem>
-                        {sections.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>
-                            Go to {s.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                {/* Delete option button */}
-                {question.options.length > 1 && (
-                  <button
-                    onClick={() => handleDeleteOption(idx)}
-                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-opacity p-1"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            ))}
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
 
             {/* Add Option Toolbar */}
             <div className="flex items-center gap-2 pt-2 text-xs">
@@ -1854,16 +2151,25 @@ export default function QuestionCard({
                       <div
                         key={i}
                         onClick={() => handleToggleCorrectOption(opt.label)}
-                        className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer border text-xs font-medium transition-all ${
+                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer border text-xs font-medium transition-all ${
                           isCorrect
                             ? 'bg-emerald-50 border-emerald-500 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 shadow-sm'
                             : 'bg-white dark:bg-gray-900 border-gray-200 hover:border-gray-300'
                         }`}
                       >
-                        <CheckCircle2
-                          className={`h-4 w-4 ${isCorrect ? 'text-emerald-600' : 'text-gray-300'}`}
-                        />
-                        <span>{opt.label}</span>
+                        <div className="flex items-center gap-2.5">
+                          <CheckCircle2
+                            className={`h-4 w-4 shrink-0 ${isCorrect ? 'text-emerald-600' : 'text-gray-300'}`}
+                          />
+                          <span>{opt.label}</span>
+                        </div>
+                        {opt.imageUrl && (
+                          <img
+                            src={opt.imageUrl}
+                            alt={opt.label}
+                            className="h-6 w-9 object-cover rounded border border-gray-200 dark:border-gray-700"
+                          />
+                        )}
                       </div>
                     );
                   })}
@@ -1871,18 +2177,268 @@ export default function QuestionCard({
               </div>
             )}
 
-            {/* Answer Explanation */}
-            <div>
-              <label className="text-[11px] text-gray-500 block mb-1">
-                Answer Feedback / Explanation (shown after submission)
-              </label>
-              <Input
-                type="text"
-                placeholder="Explain why this answer is correct..."
-                value={question.quizExplanation || ''}
-                onChange={(e) => onChange({ quizExplanation: e.target.value })}
-                className="h-8 text-xs bg-white dark:bg-gray-900"
-              />
+            {/* Short Answer: Accepted Answers list & Case sensitivity */}
+            {qType === 'SHORT_ANSWER' && (
+              <div className="space-y-2">
+                <p className="text-xs text-purple-700 dark:text-purple-300 font-medium">
+                  Accepted correct answers:
+                </p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="text"
+                    placeholder="Enter an accepted answer..."
+                    value={newAcceptedAnswer}
+                    onChange={(e) => setNewAcceptedAnswer(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddAcceptedAnswer();
+                      }
+                    }}
+                    className="h-8 text-xs bg-white dark:bg-gray-900 flex-1"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleAddAcceptedAnswer}
+                    disabled={!newAcceptedAnswer.trim()}
+                    className="h-8 text-xs bg-purple-600 hover:bg-purple-700 text-white shrink-0"
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add
+                  </Button>
+                </div>
+
+                {/* Accepted answers badges */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {(question.quizAnswer?.acceptedAnswers || []).map((ans: string, aIdx: number) => (
+                    <span
+                      key={aIdx}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                    >
+                      {ans}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAcceptedAnswer(ans)}
+                        className="text-emerald-600 hover:text-red-500 transition-colors p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                  {(!question.quizAnswer?.acceptedAnswers || question.quizAnswer.acceptedAnswers.length === 0) && (
+                    <p className="text-[11px] text-gray-400 italic">
+                      No accepted answers added yet. Add one or more exact answers above.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <Switch
+                    checked={Boolean(question.quizAnswer?.caseSensitive)}
+                    onCheckedChange={(checked) =>
+                      onChange({
+                        quizAnswer: {
+                          ...question.quizAnswer,
+                          caseSensitive: checked,
+                        },
+                      })
+                    }
+                  />
+                  <span className="text-[11px] text-gray-600 dark:text-gray-300">
+                    Case-sensitive grading (require exact capitalization)
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Number: Grading Rules (Exact, Tolerance, Range) */}
+            {qType === 'NUMBER' && (
+              <div className="space-y-2">
+                <p className="text-xs text-purple-700 dark:text-purple-300 font-medium">
+                  Number grading rule:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[11px] text-gray-500 block mb-1">Grading Mode</span>
+                    <Select
+                      value={question.quizAnswer?.numberMode || 'exact'}
+                      onValueChange={(val) =>
+                        onChange({
+                          quizAnswer: {
+                            ...question.quizAnswer,
+                            numberMode: val,
+                          },
+                        })
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-xs bg-white dark:bg-gray-900">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="exact">Exact match</SelectItem>
+                        <SelectItem value="tolerance">Value with tolerance (±)</SelectItem>
+                        <SelectItem value="range">Within range [min, max]</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {(!question.quizAnswer?.numberMode || question.quizAnswer?.numberMode === 'exact') && (
+                    <div>
+                      <span className="text-[11px] text-gray-500 block mb-1">Exact Value</span>
+                      <Input
+                        type="number"
+                        placeholder="e.g. 42"
+                        value={question.quizAnswer?.exactValue ?? ''}
+                        onChange={(e) =>
+                          onChange({
+                            quizAnswer: {
+                              ...question.quizAnswer,
+                              exactValue: e.target.value !== '' ? Number(e.target.value) : undefined,
+                            },
+                          })
+                        }
+                        className="h-8 text-xs bg-white dark:bg-gray-900"
+                      />
+                    </div>
+                  )}
+
+                  {question.quizAnswer?.numberMode === 'tolerance' && (
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <span className="text-[11px] text-gray-500 block mb-1">Target Value</span>
+                        <Input
+                          type="number"
+                          placeholder="e.g. 100"
+                          value={question.quizAnswer?.exactValue ?? ''}
+                          onChange={(e) =>
+                            onChange({
+                              quizAnswer: {
+                                ...question.quizAnswer,
+                                exactValue: e.target.value !== '' ? Number(e.target.value) : undefined,
+                              },
+                            })
+                          }
+                          className="h-8 text-xs bg-white dark:bg-gray-900"
+                        />
+                      </div>
+                      <div className="w-24">
+                        <span className="text-[11px] text-gray-500 block mb-1">± Tolerance</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          placeholder="e.g. 5"
+                          value={question.quizAnswer?.tolerance ?? ''}
+                          onChange={(e) =>
+                            onChange({
+                              quizAnswer: {
+                                ...question.quizAnswer,
+                                tolerance: e.target.value !== '' ? Number(e.target.value) : undefined,
+                              },
+                            })
+                          }
+                          className="h-8 text-xs bg-white dark:bg-gray-900"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {question.quizAnswer?.numberMode === 'range' && (
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <span className="text-[11px] text-gray-500 block mb-1">Min Value</span>
+                        <Input
+                          type="number"
+                          placeholder="Min"
+                          value={question.quizAnswer?.minVal ?? ''}
+                          onChange={(e) =>
+                            onChange({
+                              quizAnswer: {
+                                ...question.quizAnswer,
+                                minVal: e.target.value !== '' ? Number(e.target.value) : undefined,
+                              },
+                            })
+                          }
+                          className="h-8 text-xs bg-white dark:bg-gray-900"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <span className="text-[11px] text-gray-500 block mb-1">Max Value</span>
+                        <Input
+                          type="number"
+                          placeholder="Max"
+                          value={question.quizAnswer?.maxVal ?? ''}
+                          onChange={(e) =>
+                            onChange({
+                              quizAnswer: {
+                                ...question.quizAnswer,
+                                maxVal: e.target.value !== '' ? Number(e.target.value) : undefined,
+                              },
+                            })
+                          }
+                          className="h-8 text-xs bg-white dark:bg-gray-900"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Feedback & Explanations */}
+            <div className="space-y-2 pt-2 border-t border-purple-200/60 dark:border-purple-800/60">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] text-gray-500 block mb-1">
+                    Correct Answer Feedback
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="Message shown when answer is correct..."
+                    value={question.quizAnswer?.correctFeedback || ''}
+                    onChange={(e) =>
+                      onChange({
+                        quizAnswer: {
+                          ...question.quizAnswer,
+                          correctFeedback: e.target.value,
+                        },
+                      })
+                    }
+                    className="h-8 text-xs bg-white dark:bg-gray-900"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-gray-500 block mb-1">
+                    Incorrect Answer Feedback
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="Message shown when answer is incorrect..."
+                    value={question.quizAnswer?.incorrectFeedback || ''}
+                    onChange={(e) =>
+                      onChange({
+                        quizAnswer: {
+                          ...question.quizAnswer,
+                          incorrectFeedback: e.target.value,
+                        },
+                      })
+                    }
+                    className="h-8 text-xs bg-white dark:bg-gray-900"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] text-gray-500 block mb-1">
+                  General Solution / Explanation (shown after submission)
+                </label>
+                <Input
+                  type="text"
+                  placeholder="Explain why this answer is correct..."
+                  value={question.quizExplanation || ''}
+                  onChange={(e) => onChange({ quizExplanation: e.target.value })}
+                  className="h-8 text-xs bg-white dark:bg-gray-900"
+                />
+              </div>
             </div>
 
             <div className="flex justify-end pt-1">

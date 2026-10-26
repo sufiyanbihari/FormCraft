@@ -276,7 +276,7 @@ export async function POST(
         let pointsEarned = 0;
 
         if (q.quizPoints > 0 && submittedVal !== undefined && submittedVal !== null) {
-          if (q.type === 'MULTIPLE_CHOICE' || q.type === 'DROPDOWN' || q.type === 'SHORT_ANSWER') {
+          if (q.type === 'MULTIPLE_CHOICE' || q.type === 'DROPDOWN') {
             const correctVal = qAnswerConfig.correctValue;
             if (correctVal && String(submittedVal).trim().toLowerCase() === String(correctVal).trim().toLowerCase()) {
               isCorrect = true;
@@ -285,14 +285,55 @@ export async function POST(
           } else if (q.type === 'CHECKBOXES') {
             const correctVals: string[] = qAnswerConfig.correctValues || [];
             if (Array.isArray(submittedVal)) {
-              const sSorted = [...submittedVal].sort();
-              const cSorted = [...correctVals].sort();
+              const sSorted = [...submittedVal].map((v) => String(v).trim().toLowerCase()).sort();
+              const cSorted = [...correctVals].map((v) => String(v).trim().toLowerCase()).sort();
               if (
                 sSorted.length === cSorted.length &&
                 sSorted.every((v, i) => v === cSorted[i])
               ) {
                 isCorrect = true;
                 pointsEarned = q.quizPoints;
+              }
+            }
+          } else if (q.type === 'SHORT_ANSWER') {
+            const accepted: string[] = Array.isArray(qAnswerConfig.acceptedAnswers) && qAnswerConfig.acceptedAnswers.length > 0
+              ? qAnswerConfig.acceptedAnswers
+              : (qAnswerConfig.correctValue ? [qAnswerConfig.correctValue] : []);
+            const caseSensitive = Boolean(qAnswerConfig.caseSensitive);
+            const subStr = String(submittedVal).trim();
+            if (
+              accepted.some((ans: string) => {
+                const a = String(ans).trim();
+                return caseSensitive ? subStr === a : subStr.toLowerCase() === a.toLowerCase();
+              })
+            ) {
+              isCorrect = true;
+              pointsEarned = q.quizPoints;
+            }
+          } else if (q.type === 'NUMBER') {
+            const numVal = Number(submittedVal);
+            if (!isNaN(numVal)) {
+              const mode = qAnswerConfig.numberMode || 'exact';
+              if (mode === 'exact') {
+                const target = Number(qAnswerConfig.exactValue ?? qAnswerConfig.correctValue);
+                if (!isNaN(target) && numVal === target) {
+                  isCorrect = true;
+                  pointsEarned = q.quizPoints;
+                }
+              } else if (mode === 'tolerance') {
+                const target = Number(qAnswerConfig.exactValue);
+                const tol = Math.abs(Number(qAnswerConfig.tolerance || 0));
+                if (!isNaN(target) && Math.abs(numVal - target) <= tol) {
+                  isCorrect = true;
+                  pointsEarned = q.quizPoints;
+                }
+              } else if (mode === 'range') {
+                const min = Number(qAnswerConfig.minVal);
+                const max = Number(qAnswerConfig.maxVal);
+                if (!isNaN(min) && !isNaN(max) && numVal >= min && numVal <= max) {
+                  isCorrect = true;
+                  pointsEarned = q.quizPoints;
+                }
               }
             }
           }
@@ -344,6 +385,11 @@ export async function POST(
     const ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
     const ipHash = crypto.createHash('sha256').update(ip).digest('hex').substring(0, 32);
 
+    // Release grade determination
+    const isImmediate = (form.settings?.quizReleaseGrade ?? 'IMMEDIATE') === 'IMMEDIATE';
+    const isGradeReleased = form.isQuiz ? isImmediate : false;
+    const gradeReleasedAt = isGradeReleased ? new Date() : null;
+
     // Persist submission transactionally
     const submission = await prisma.$transaction(async (tx) => {
       const sub = await tx.formSubmission.create({
@@ -356,6 +402,8 @@ export async function POST(
           idempotencyKey,
           totalScore: form.isQuiz ? totalScore : null,
           maxScore: form.isQuiz ? maxScore : null,
+          isGradeReleased,
+          gradeReleasedAt,
         },
       });
 
@@ -467,15 +515,69 @@ export async function POST(
         answerCount: answers.length,
         isQuiz: form.isQuiz,
         score: form.isQuiz ? { total: totalScore, max: maxScore } : null,
+        isGradeReleased,
         summary: `New response received for "${form.title}" (${answers.length} answers)`,
       },
     });
 
+    let quizResult: any = null;
+    if (form.isQuiz) {
+      if (isImmediate) {
+        const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+        const passPercentage = (form.settings as any)?.quizPassPercentage;
+        const hasPassRule = passPercentage !== null && passPercentage !== undefined;
+        const isPassed = hasPassRule ? percentage >= Number(passPercentage) : null;
+        const customMessage =
+          isPassed === true
+            ? (form.settings as any)?.quizPassMessage
+            : isPassed === false
+              ? (form.settings as any)?.quizFailMessage
+              : null;
+
+        const showCorrect = Boolean((form.settings as any)?.quizShowCorrectAnswers);
+        const showFeedback = Boolean((form.settings as any)?.quizShowFeedback);
+        const showPoints = (form.settings as any)?.quizShowPointsEarned !== false;
+
+        const breakdown = gradedAnswers.map((g) => {
+          const q = allQuestions.find((item) => item.id === g.questionId);
+          const cfg = (q?.quizAnswer as any) || {};
+          return {
+            questionId: g.questionId,
+            questionTitle: q?.title,
+            score: showPoints ? g.score : undefined,
+            maxPoints: showPoints ? (q?.quizPoints || 0) : undefined,
+            isCorrect: g.isCorrect,
+            submittedValue: g.value,
+            correctAnswer: showCorrect
+              ? cfg.correctValues || cfg.correctValue || cfg.acceptedAnswers || (cfg.numberMode ? cfg : null)
+              : undefined,
+            explanation: showFeedback ? q?.quizExplanation : undefined,
+            feedback: showFeedback ? (g.isCorrect ? cfg.correctFeedback : cfg.incorrectFeedback) : undefined,
+          };
+        });
+
+        quizResult = {
+          total: totalScore,
+          max: maxScore,
+          percentage,
+          isPassed,
+          customMessage,
+          showPoints,
+          showCorrect,
+          showFeedback,
+          breakdown: showCorrect || showFeedback || showPoints ? breakdown : undefined,
+        };
+      }
+    }
+
     return NextResponse.json({
-      message: settings?.confirmationMessage || 'Your response has been recorded.',
+      message: isGradeReleased
+        ? settings?.confirmationMessage || 'Your response has been recorded.'
+        : 'Your response has been recorded. Grades will be released after manual review.',
       submissionId: submission.id,
       editToken: submission.editToken,
-      score: form.isQuiz ? { total: totalScore, max: maxScore } : null,
+      isGradeReleased,
+      score: quizResult,
     });
   } catch (error) {
     console.error('Failed to submit form:', error);
