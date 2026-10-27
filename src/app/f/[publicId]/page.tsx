@@ -47,6 +47,8 @@ import {
 import { getVideoEmbedUrl, formatBytes, formatSizeMb, isLikelyImageSource, isLikelyVideoSource } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/useAuth';
 import { uploadFile } from '@/lib/storage/clientUpload';
+import QuizTimerBar from '@/components/quiz/QuizTimerBar';
+import QuizStartCard from '@/components/quiz/QuizStartCard';
 
 function isDarkColor(hexColor?: string): boolean {
   if (!hexColor || !hexColor.startsWith('#')) return true;
@@ -101,6 +103,8 @@ function PublicFormContent() {
   const [sectionHistory, setSectionHistory] = useState<number[]>([0]);
 
   // Submission state
+  const [activeQuizAttempt, setActiveQuizAttempt] = useState<any>(null);
+  const [quizServerTime, setQuizServerTime] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submissionResult, setSubmissionResult] = useState<any>(null);
@@ -195,6 +199,58 @@ function PublicFormContent() {
           setCurrentUserEmail(data.currentUserEmail);
           setRespondentEmail(data.currentUserEmail);
         }
+
+        // Quiz Mode: Check for existing active or completed attempt
+        if (loadedForm.isQuiz) {
+          const storedIdentity =
+            (typeof window !== 'undefined' &&
+              (sessionStorage.getItem(`fc_quiz_id_${publicId}`) ||
+                localStorage.getItem(`fc_quiz_id_${publicId}`))) ||
+            data.currentUserEmail ||
+            '';
+
+          if (storedIdentity) {
+            try {
+              const attRes = await fetch(
+                `/api/public/forms/${publicId}/quiz/attempt?participantIdentity=${encodeURIComponent(storedIdentity)}`,
+                { cache: 'no-store' }
+              );
+              if (attRes.ok) {
+                const attData = await attRes.json();
+                if (attData?.attempt) {
+                  setActiveQuizAttempt(attData.attempt);
+                  setQuizServerTime(attData.serverTime);
+
+                  if (attData.attempt.status === 'COMPLETED' || attData.attempt.status === 'TIMED_OUT') {
+                    setIsSubmitted(true);
+                    setSubmissionResult({
+                      message:
+                        attData.attempt.timeoutReason === 'OVERALL_TIMEOUT'
+                          ? 'Time expired. Your quiz attempt was automatically submitted and scored.'
+                          : 'Your quiz response has been recorded.',
+                      isGradeReleased: true,
+                      score: {
+                        total: attData.attempt.earnedScore,
+                        max: attData.attempt.maxScore,
+                        percentage: attData.attempt.percentage,
+                        durationSeconds: attData.attempt.durationSeconds,
+                      },
+                    });
+                  } else {
+                    if (attData.attempt.savedAnswers) {
+                      setAnswers(attData.attempt.savedAnswers);
+                    }
+                    if (typeof attData.attempt.currentQuestionIndex === 'number') {
+                      setCurrentSectionIndex(attData.attempt.currentQuestionIndex);
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('Attempt lookup error:', e);
+            }
+          }
+        }
       }
     } catch (err) {
       setIsClosed(true);
@@ -204,39 +260,123 @@ function PublicFormContent() {
     }
   };
 
-  useEffect(() => {
-    fetchPublicForm(true);
-  }, [publicId]);
-
-  // When tab regains focus, quietly check if user logged in via another tab WITHOUT re-fetching or unmounting the form
-  useEffect(() => {
-    const handleFocus = async () => {
-      if (!isAuthenticated && formData?.settings?.requireAuth) {
-        try {
-          const res = await fetch('/api/auth/me');
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.user) {
-              setIsAuthenticated(true);
-              if (data.user.email) {
-                setCurrentUserEmail(data.user.email);
-                setRespondentEmail((prev) => prev || data.user.email);
-              }
-            }
-          }
-        } catch {
-          // Ignore background auth check failures
-        }
+  const handleStartQuizAttempt = async (identity: string, name?: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`/api/public/forms/${publicId}/quiz/attempt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          participantIdentity: identity,
+          participantName: name,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Failed to start quiz attempt.' };
       }
-    };
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [isAuthenticated, formData?.settings?.requireAuth]);
 
-  // Answer change handlers
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(`fc_quiz_id_${publicId}`, identity);
+        localStorage.setItem(`fc_quiz_id_${publicId}`, identity);
+      }
+
+      setActiveQuizAttempt(data.attempt);
+      setQuizServerTime(data.serverTime);
+
+      // Pre-fill identity question if one is configured in form
+      if (formData?.settings?.quizIdentityQuestionId) {
+        setAnswers((prev) => ({
+          ...prev,
+          [formData.settings.quizIdentityQuestionId]: identity,
+          ...(data.attempt.savedAnswers || {}),
+        }));
+      } else if (data.attempt.savedAnswers) {
+        setAnswers(data.attempt.savedAnswers);
+      }
+
+      if (data.attempt.status === 'COMPLETED' || data.attempt.status === 'TIMED_OUT') {
+        setIsSubmitted(true);
+        setSubmissionResult({
+          message:
+            data.attempt.timeoutReason === 'OVERALL_TIMEOUT'
+              ? 'Time expired. Your quiz attempt was automatically submitted and scored.'
+              : 'Your quiz response has been recorded.',
+          isGradeReleased: true,
+          score: {
+            total: data.attempt.earnedScore,
+            max: data.attempt.maxScore,
+            percentage: data.attempt.percentage,
+            durationSeconds: data.attempt.durationSeconds,
+          },
+        });
+      } else if (typeof data.attempt.currentQuestionIndex === 'number') {
+        setCurrentSectionIndex(data.attempt.currentQuestionIndex);
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error starting quiz' };
+    }
+  };
+
+  const handleOverallTimeout = async () => {
+    if (!activeQuizAttempt?.id || isSubmitted) return;
+    setIsSubmitting(true);
+    try {
+      const formattedAnswers = Object.entries(answers).map(([questionId, value]) => ({
+        questionId,
+        value,
+      }));
+      const res = await fetch(`/api/public/forms/${publicId}/quiz/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attemptId: activeQuizAttempt.id,
+          reason: 'OVERALL_TIMEOUT',
+          finalAnswers: formattedAnswers,
+        }),
+      });
+      const data = await res.json();
+      setIsSubmitted(true);
+      setSubmissionResult(data);
+    } catch (e) {
+      console.error('Overall timeout finalization failed:', e);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleQuestionTimeout = async () => {
+    if (!activeQuizAttempt?.id || isSubmitted) return;
+    if (formData?.sections && currentSectionIndex < formData.sections.length - 1) {
+      handleNext();
+    } else {
+      handleSubmit();
+    }
+  };
+
+  // Answer change handlers with auto-saving for active quiz attempts
   const handleAnswerChange = (qId: string, val: any) => {
+    // If question is locked by forward-only navigation policy, reject change
+    if (activeQuizAttempt?.lockedQuestionIds?.includes(qId)) {
+      return;
+    }
+
     setAnswers((prev) => ({ ...prev, [qId]: val }));
     setValidationError(null);
+
+    // Auto-save answer to server for active persistent quiz attempts
+    if (activeQuizAttempt?.id && activeQuizAttempt.status === 'IN_PROGRESS') {
+      fetch(`/api/public/forms/${publicId}/quiz/save-answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attemptId: activeQuizAttempt.id,
+          questionId: qId,
+          value: val,
+        }),
+      }).catch((e) => console.warn('Background answer save error:', e));
+    }
   };
 
   // Fetch dropdown options for all DROPDOWN lookup mappings
@@ -836,6 +976,37 @@ function PublicFormContent() {
   const handleNext = () => {
     if (!validateCurrentSection()) return;
 
+    const syncQuizNavigation = (nextIdx: number) => {
+      if (formData?.isQuiz && activeQuizAttempt?.id && activeQuizAttempt.status === 'IN_PROGRESS') {
+        const fromQId = questionsInCurrentSection[0]?.id;
+        const nextSec = sections[nextIdx];
+        const targetQId = nextSec?.questions?.[0]?.id;
+
+        fetch(`/api/public/forms/${publicId}/quiz/navigate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            attemptId: activeQuizAttempt.id,
+            fromQuestionId: fromQId,
+            targetQuestionId: targetQId,
+            answerValue: fromQId ? answers[fromQId] : undefined,
+          }),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.attempt) {
+              setActiveQuizAttempt((prev: any) => ({
+                ...prev,
+                ...data.attempt,
+                lockedQuestionIds: data.attempt.lockedQuestionIds || prev?.lockedQuestionIds || [],
+                questionDeadlines: data.attempt.questionDeadlines || prev?.questionDeadlines || {},
+              }));
+            }
+          })
+          .catch((err) => console.warn('Quiz navigate sync error:', err));
+      }
+    };
+
     // Check if any question has conditional section routing
     let targetSectionId: string | null = null;
     for (const q of questionsInCurrentSection) {
@@ -857,6 +1028,7 @@ function PublicFormContent() {
     if (targetSectionId) {
       const targetIdx = sections.findIndex((s: any) => s.id === targetSectionId);
       if (targetIdx !== -1) {
+        syncQuizNavigation(targetIdx);
         setSectionHistory((prev) => [...prev, targetIdx]);
         setCurrentSectionIndex(targetIdx);
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -873,6 +1045,7 @@ function PublicFormContent() {
     if (currentSection.nextSectionId && currentSection.nextSectionId !== 'NEXT') {
       const targetIdx = sections.findIndex((s: any) => s.id === currentSection.nextSectionId);
       if (targetIdx !== -1) {
+        syncQuizNavigation(targetIdx);
         setSectionHistory((prev) => [...prev, targetIdx]);
         setCurrentSectionIndex(targetIdx);
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -882,13 +1055,18 @@ function PublicFormContent() {
 
     // Default to next linear section
     if (currentSectionIndex < sections.length - 1) {
-      setSectionHistory((prev) => [...prev, currentSectionIndex + 1]);
-      setCurrentSectionIndex(currentSectionIndex + 1);
+      const nextIdx = currentSectionIndex + 1;
+      syncQuizNavigation(nextIdx);
+      setSectionHistory((prev) => [...prev, nextIdx]);
+      setCurrentSectionIndex(nextIdx);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
   const handleBack = () => {
+    if (formData?.settings?.quizNavigationPolicy === 'FORWARD_ONLY') {
+      return;
+    }
     if (sectionHistory.length > 1) {
       const newHistory = [...sectionHistory];
       newHistory.pop();
@@ -914,6 +1092,38 @@ function PublicFormContent() {
       questionId,
       value,
     }));
+
+    // If quiz with active attempt, finalize via quiz finalize endpoint
+    if (formData?.isQuiz && activeQuizAttempt?.id) {
+      try {
+        const res = await fetch(`/api/public/forms/${publicId}/quiz/finalize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            attemptId: activeQuizAttempt.id,
+            reason: 'MANUAL_SUBMISSION',
+            finalAnswers: formattedAnswers,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setValidationError(data.error || 'Failed to submit quiz attempt');
+        } else {
+          setIsSubmitted(true);
+          setSubmissionResult(data);
+          confetti({
+            particleCount: 80,
+            spread: 70,
+            origin: { y: 0.6 },
+          });
+        }
+      } catch {
+        setValidationError('Failed to submit response. Please check your connection.');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
 
     // If cattle survey, ensure owner 1's fields are in formattedAnswers for backward compatibility
     if (isCattleSurvey && cattleOwners.length > 0) {
@@ -1202,6 +1412,40 @@ function PublicFormContent() {
     ? (isDarkBg ? '#0284c7' : '#004B6E')
     : (theme.primaryColor || '#004B6E');
 
+  // Quiz Mode: Display start card if attempt has not started yet
+  if (formData?.isQuiz && (!activeQuizAttempt || activeQuizAttempt.status !== 'IN_PROGRESS') && !isSubmitted) {
+    const identityQuestion = formData.settings?.quizIdentityQuestionId
+      ? (formData.sections || []).flatMap((s: any) => s.questions || []).find((q: any) => q.id === formData.settings.quizIdentityQuestionId)
+      : null;
+
+    const hasAnyQuestionTimers = (formData.sections || [])
+      .flatMap((s: any) => s.questions || [])
+      .some((q: any) => q.timeLimitSeconds && q.timeLimitSeconds > 0);
+
+    return (
+      <div
+        className="min-h-screen py-10 pb-20 px-4 transition-colors flex items-center justify-center"
+        style={{
+          backgroundColor: effectiveBg,
+          fontFamily: theme.fontFamily || 'Inter',
+        }}
+      >
+        <QuizStartCard
+          formTitle={formData.title}
+          formDescription={formData.description}
+          identityFieldTitle={identityQuestion?.title || 'Participant Identifier (e.g. Employee ID / Student ID)'}
+          identityFieldRequired={true}
+          isRosterEnforced={Boolean(formData.settings?.quizRosterMode)}
+          overallDurationMinutes={formData.settings?.quizDurationMinutes}
+          hasQuestionTimers={hasAnyQuestionTimers}
+          navigationPolicy={formData.settings?.quizNavigationPolicy}
+          onStartAttempt={handleStartQuizAttempt}
+          primaryColor={theme.primaryColor || '#673ab7'}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className="min-h-screen py-10 pb-20 px-4 transition-colors"
@@ -1211,6 +1455,26 @@ function PublicFormContent() {
       }}
     >
       <div className="max-w-2xl mx-auto space-y-4">
+        {/* Sticky Quiz Timer Bar */}
+        {formData?.isQuiz && activeQuizAttempt?.status === 'IN_PROGRESS' && (
+          <QuizTimerBar
+            overallDeadline={activeQuizAttempt.overallDeadline}
+            currentQuestionDeadline={
+              (questionsInCurrentSection[0]?.id && activeQuizAttempt.questionDeadlines?.[questionsInCurrentSection[0]?.id]) ||
+              activeQuizAttempt.currentQuestionDeadline ||
+              null
+            }
+            serverTime={quizServerTime}
+            participantIdentity={activeQuizAttempt.participantIdentity}
+            participantName={activeQuizAttempt.participantName}
+            navigationPolicy={formData.settings?.quizNavigationPolicy}
+            currentQuestionIndex={currentSectionIndex}
+            totalQuestions={sections.length}
+            onOverallTimeout={handleOverallTimeout}
+            onQuestionTimeout={handleQuestionTimeout}
+          />
+        )}
+
         {/* Form Title & Banner Card */}
         <div
           className={`bg-white dark:bg-gray-900 overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm ${
@@ -1350,6 +1614,18 @@ function PublicFormContent() {
                   <span className="inline-block mt-1 text-[11px] font-bold text-purple-600">
                     {q.quizPoints} {q.quizPoints === 1 ? 'point' : 'points'}
                   </span>
+                )}
+                {formData.isQuiz && q.timeLimitSeconds > 0 && (
+                  <span className="inline-flex items-center gap-1 ml-2 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                    <Clock className="w-3 h-3" />
+                    {q.timeLimitSeconds}s Limit
+                  </span>
+                )}
+                {activeQuizAttempt?.lockedQuestionIds?.includes(q.id) && (
+                  <div className="mt-2 p-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs flex items-center gap-1.5 font-medium">
+                    <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span>Question locked — Answers cannot be modified in forward-only mode.</span>
+                  </div>
                 )}
 
                 {/* Inline Question Image (if configured on standard question types) */}
@@ -2648,7 +2924,7 @@ function PublicFormContent() {
             : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800'
         }`}>
           <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
-            {!isCattleSurvey && sectionHistory.length > 1 && (
+            {!isCattleSurvey && sectionHistory.length > 1 && formData?.settings?.quizNavigationPolicy !== 'FORWARD_ONLY' && (
               <Button
                 type="button"
                 variant="outline"
@@ -2663,22 +2939,24 @@ function PublicFormContent() {
               </Button>
             )}
 
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowClearConfirm(true)}
-              className={`text-xs sm:text-sm font-semibold h-11 px-4 sm:px-5 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2 group cursor-pointer ${
-                isDarkBg
-                  ? 'bg-white/10 hover:bg-rose-500/20 text-white/90 hover:text-white border border-white/25 hover:border-rose-400/50 shadow-sm backdrop-blur-md'
-                  : 'bg-white hover:bg-rose-50 text-gray-700 hover:text-rose-600 border border-gray-300 hover:border-rose-300 shadow-sm'
-              }`}
-              title="Clear all answers and reset form"
-            >
-              <RotateCcw className={`h-3.5 w-3.5 group-hover:rotate-[-60deg] transition-all duration-200 ${
-                isDarkBg ? 'text-sky-200 group-hover:text-rose-300' : 'text-gray-500 group-hover:text-rose-500'
-              }`} />
-              <span>Clear form</span>
-            </Button>
+            {(!formData?.isQuiz || !activeQuizAttempt) && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowClearConfirm(true)}
+                className={`text-xs sm:text-sm font-semibold h-11 px-4 sm:px-5 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2 group cursor-pointer ${
+                  isDarkBg
+                    ? 'bg-white/10 hover:bg-rose-500/20 text-white/90 hover:text-white border border-white/25 hover:border-rose-400/50 shadow-sm backdrop-blur-md'
+                    : 'bg-white hover:bg-rose-50 text-gray-700 hover:text-rose-600 border border-gray-300 hover:border-rose-300 shadow-sm'
+                }`}
+                title="Clear all answers and reset form"
+              >
+                <RotateCcw className={`h-3.5 w-3.5 group-hover:rotate-[-60deg] transition-all duration-200 ${
+                  isDarkBg ? 'text-sky-200 group-hover:text-rose-300' : 'text-gray-500 group-hover:text-rose-500'
+                }`} />
+                <span>Clear form</span>
+              </Button>
+            )}
           </div>
 
           <div>

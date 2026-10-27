@@ -89,6 +89,7 @@ export async function GET(
         validation: q.validation,
         config: q.config,
         quizPoints: form.isQuiz ? q.quizPoints : 0,
+        timeLimitSeconds: form.isQuiz ? (q.timeLimitSeconds || 0) : 0,
         options: q.options.map((opt) => ({
           id: opt.id,
           label: opt.label,

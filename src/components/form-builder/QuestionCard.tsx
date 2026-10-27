@@ -95,6 +95,7 @@ export interface QuestionData {
   quizPoints?: number;
   quizAnswer?: any;
   quizExplanation?: string | null;
+  timeLimitSeconds?: number;
   options: {
     id?: string;
     label: string;
@@ -2122,15 +2123,30 @@ export default function QuestionCard({
                   Answer Key & Scoring
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 font-medium">Points:</span>
-                <Input
-                  type="number"
-                  min="0"
-                  value={question.quizPoints || 0}
-                  onChange={(e) => onChange({ quizPoints: parseInt(e.target.value, 10) || 0 })}
-                  className="w-16 h-7 text-xs font-bold text-center"
-                />
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-gray-500 font-medium">Points:</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={question.quizPoints || 0}
+                    onChange={(e) => onChange({ quizPoints: parseInt(e.target.value, 10) || 0 })}
+                    className="w-16 h-7 text-xs font-bold text-center"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 pl-3 border-l border-purple-200 dark:border-purple-800">
+                  <Clock className="h-3.5 w-3.5 text-purple-600" />
+                  <span className="text-xs text-gray-500 font-medium">Timer:</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={question.timeLimitSeconds || ''}
+                    onChange={(e) => onChange({ timeLimitSeconds: parseInt(e.target.value, 10) || 0 })}
+                    className="w-16 h-7 text-xs font-bold text-center"
+                  />
+                  <span className="text-[11px] text-gray-400">sec</span>
+                </div>
               </div>
             </div>
 
@@ -2458,16 +2474,23 @@ export default function QuestionCard({
         <div className="pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between text-xs">
           {/* Quiz Mode Trigger */}
           {isQuiz ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowAnswerKey(!showAnswerKey)}
-              className="text-xs text-purple-600 hover:text-purple-700 h-8"
-            >
-              <Award className="h-3.5 w-3.5 mr-1.5" />
-              Answer key ({question.quizPoints || 0} pts)
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAnswerKey(!showAnswerKey)}
+                className="text-xs text-purple-600 hover:text-purple-700 h-8"
+              >
+                <Award className="h-3.5 w-3.5 mr-1.5" />
+                Answer key ({question.quizPoints || 0} pts)
+              </Button>
+              {question.timeLimitSeconds && question.timeLimitSeconds > 0 ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-md">
+                  <Clock className="h-3 w-3" /> {question.timeLimitSeconds}s
+                </span>
+              ) : null}
+            </div>
           ) : (
             <div />
           )}

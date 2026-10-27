@@ -44,6 +44,7 @@ export async function PATCH(
       quizPoints,
       quizAnswer,
       quizExplanation,
+      timeLimitSeconds,
       options,
     } = result.data;
 
@@ -75,6 +76,7 @@ export async function PATCH(
       if (quizPoints !== undefined) qData.quizPoints = quizPoints;
       if (quizAnswer !== undefined) qData.quizAnswer = quizAnswer;
       if (quizExplanation !== undefined) qData.quizExplanation = quizExplanation;
+      if (timeLimitSeconds !== undefined) qData.timeLimitSeconds = timeLimitSeconds;
 
       await tx.formQuestion.update({
         where: { id: questionId },

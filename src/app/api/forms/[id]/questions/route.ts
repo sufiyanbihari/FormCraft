@@ -43,6 +43,7 @@ export async function POST(
       quizPoints,
       quizAnswer,
       quizExplanation,
+      timeLimitSeconds,
       options,
     } = result.data;
 
@@ -70,6 +71,7 @@ export async function POST(
           quizPoints: quizPoints || 0,
           quizAnswer: quizAnswer || {},
           quizExplanation: quizExplanation || '',
+          timeLimitSeconds: timeLimitSeconds || 0,
         },
       });
 

@@ -89,6 +89,7 @@ export const createQuestionSchema = z.object({
   quizPoints: z.number().int().min(0).default(0),
   quizAnswer: z.any().optional().default({}),
   quizExplanation: z.string().nullable().optional().default(''),
+  timeLimitSeconds: z.number().int().min(0).optional().default(0),
   options: z.array(questionOptionSchema).optional().default([]),
 });
 
@@ -104,6 +105,7 @@ export const updateQuestionSchema = z.object({
   quizPoints: z.number().int().min(0).optional(),
   quizAnswer: z.any().optional(),
   quizExplanation: z.string().nullable().optional(),
+  timeLimitSeconds: z.number().int().min(0).optional(),
   options: z.array(questionOptionSchema).optional(),
 });
 

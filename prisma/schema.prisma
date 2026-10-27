@@ -91,6 +91,9 @@ model Form {
   uploadedFiles UploadedFile[]
   lookupDatasets FormLookupDataset[]
   lookupMappings FormLookupMapping[]
+  quizRosters    QuizParticipantRoster[]
+  quizAttempts   QuizAttempt[]
+
 
   @@index([ownerId])
   @@index([publicId])
@@ -143,6 +146,13 @@ model FormSettings {
   quizPassMessage          String?    @default("Congratulations! You passed the quiz.")
   quizFailMessage          String?    @default("Unfortunately, you did not reach the passing score.")
   quizDefaultPoints        Int?       @default(1)
+  quizTimerMode            String?    @default("NONE") // "NONE" | "QUESTION" | "OVERALL" | "BOTH"
+  quizDurationMinutes      Int?
+  quizNavigationPolicy     String?    @default("BACKWARD_ENABLED") // "BACKWARD_ENABLED" | "FORWARD_ONLY"
+  quizTimeoutBehavior      String?    @default("AUTO_FINALIZE")
+  quizIdentityQuestionId   String?
+  quizExpectedParticipants Int?
+  quizRosterMode           String?    @default("COUNT_ONLY") // "COUNT_ONLY" | "ROSTER"
   createdAt                DateTime   @default(now())
   updatedAt                DateTime   @updatedAt
 
@@ -182,6 +192,7 @@ model FormQuestion {
   quizPoints      Int      @default(0)
   quizAnswer      Json?    @default("{}")
   quizExplanation String?  @default("")
+  timeLimitSeconds Int?    @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -252,6 +263,7 @@ model FormSubmission {
   answers     SubmissionAnswer[]
   files       UploadedFile[]
   cattleOwners CattleOwnerEntry[]
+  quizAttempts QuizAttempt[]
 
   @@index([formId, submittedAt])
   @@index([respondentUserId])
@@ -437,3 +449,60 @@ model UploadedFileData {
 
   @@map("uploaded_file_data")
 }
+
+model QuizParticipantRoster {
+  id            String   @id @default(cuid())
+  formId        String
+  participantId String   // identifier e.g. EMP101, REG001, student id
+  name          String?
+  email         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  form     Form          @relation(fields: [formId], references: [id], onDelete: Cascade)
+  attempts QuizAttempt[]
+
+  @@unique([formId, participantId])
+  @@index([formId])
+  @@map("quiz_participant_rosters")
+}
+
+model QuizAttempt {
+  id                       String    @id @default(cuid())
+  formId                   String
+  formVersionId            String?
+  participantIdentity      String
+  participantName          String?
+  rosterEntryId            String?
+  status                   String    @default("IN_PROGRESS") // "IN_PROGRESS" | "COMPLETED" | "TIMED_OUT"
+  startedAt                DateTime  @default(now())
+  overallDeadline          DateTime?
+  currentQuestionId        String?
+  currentQuestionIndex     Int       @default(0)
+  currentQuestionStartedAt DateTime?
+  currentQuestionDeadline  DateTime?
+  completedAt              DateTime?
+  finalizedAt              DateTime?
+  timeoutReason            String?
+  earnedScore              Float?
+  maxScore                 Float?
+  percentage               Float?
+  durationSeconds          Int?
+  savedAnswers             Json      @default("{}")
+  questionTiming           Json      @default("{}")
+  lockedQuestionIds        String[]  @default([])
+  submissionId             String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  form        Form                   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  rosterEntry QuizParticipantRoster? @relation(fields: [rosterEntryId], references: [id], onDelete: SetNull)
+  submission  FormSubmission?        @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+
+  @@unique([formId, participantIdentity])
+  @@index([formId, status])
+  @@index([formId, participantIdentity])
+  @@index([formId, startedAt])
+  @@map("quiz_attempts")
+}
+

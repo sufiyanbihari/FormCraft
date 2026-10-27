@@ -30,6 +30,7 @@ import {
   Send,
   AlertCircle,
 } from 'lucide-react';
+import LiveQuizDashboard from '@/components/quiz/LiveQuizDashboard';
 
 function renderSingleFileCard(val: any, idx?: number) {
   const isImg =
@@ -159,6 +160,7 @@ interface ResponsesTabProps {
   isAcceptingResponses: boolean;
   onToggleAccepting: (accepting: boolean) => void;
   primaryColor?: string;
+  initialSubView?: 'summary' | 'question' | 'individual' | 'liveDashboard';
 }
 
 const CHART_COLORS = [
@@ -178,8 +180,11 @@ export default function ResponsesTab({
   isAcceptingResponses,
   onToggleAccepting,
   primaryColor = '#673ab7',
+  initialSubView,
 }: ResponsesTabProps) {
-  const [subView, setSubView] = useState<'summary' | 'question' | 'individual'>('summary');
+  const [subView, setSubView] = useState<'summary' | 'question' | 'individual' | 'liveDashboard'>(
+    initialSubView || (isQuiz ? 'liveDashboard' : 'summary')
+  );
   const [analytics, setAnalytics] = useState<any>(null);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -409,10 +414,11 @@ export default function ResponsesTab({
         </div>
       </div>
 
-      {/* Sub-view switcher: Summary | Question | Individual */}
+      {/* Sub-view switcher: Live Dashboard | Summary | Question | Individual */}
       <div className="flex justify-center border-b border-gray-200 dark:border-gray-800">
-        <div className="flex items-center gap-8 -mb-px text-xs font-semibold">
+        <div className="flex items-center gap-6 sm:gap-8 -mb-px text-xs font-semibold overflow-x-auto">
           {[
+            ...(isQuiz ? [{ id: 'liveDashboard', label: '⚡ Live Dashboard' }] : []),
             { id: 'summary', label: 'Summary' },
             { id: 'question', label: 'Question' },
             { id: 'individual', label: 'Individual' },
@@ -420,9 +426,9 @@ export default function ResponsesTab({
             <button
               key={tab.id}
               onClick={() => setSubView(tab.id as any)}
-              className={`py-2 px-3 border-b-2 transition-all ${
+              className={`py-2 px-3 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
                 subView === tab.id
-                  ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+                  ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
                   : 'border-transparent text-gray-500 hover:text-gray-800'
               }`}
             >
@@ -432,7 +438,9 @@ export default function ResponsesTab({
         </div>
       </div>
 
-      {isLoading ? (
+      {subView === 'liveDashboard' ? (
+        <LiveQuizDashboard formId={formId} />
+      ) : isLoading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
         </div>

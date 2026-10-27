@@ -5,7 +5,10 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Award, Mail, Clock, Eye, ShieldCheck, Sliders, Calendar } from 'lucide-react';
+import { Award, Mail, Clock, Eye, ShieldCheck, Sliders, Calendar, Users, Hourglass, Navigation, AlertTriangle, ArrowRight, ExternalLink } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import QuizRosterModal from './QuizRosterModal';
 
 interface SettingsTabProps {
   isQuiz: boolean;
@@ -13,6 +16,9 @@ interface SettingsTabProps {
   settings: any;
   onChangeSettings: (updated: any) => void;
   primaryColor?: string;
+  questions?: Array<{ id: string; title: string; type: string }>;
+  formId?: string;
+  onOpenLiveDashboard?: () => void;
 }
 
 function toLocalInputString(dateStr: string | null | undefined): string {
@@ -33,7 +39,12 @@ export default function SettingsTab({
   settings,
   onChangeSettings,
   primaryColor = '#673ab7',
+  questions = [],
+  formId,
+  onOpenLiveDashboard,
 }: SettingsTabProps) {
+  const [isRosterModalOpen, setIsRosterModalOpen] = React.useState(false);
+  const [rosterCount, setRosterCount] = React.useState<number | null>(null);
   return (
     <div className="max-w-3xl mx-auto py-6 px-4 space-y-6">
       {/* 1. Quiz Settings */}
@@ -223,9 +234,304 @@ export default function SettingsTab({
                 </div>
               </div>
             )}
+
+            {/* Live Monitoring Dashboard Banner */}
+            <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div className="p-3.5 rounded-xl bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-transparent border border-purple-200 dark:border-purple-800/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="font-bold text-gray-900 dark:text-gray-100">Live Quiz Monitoring</span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    Monitor live participant attempts, timers, completion statuses, and real-time scores
+                  </p>
+                </div>
+                {onOpenLiveDashboard && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={onOpenLiveDashboard}
+                    className="h-8 text-xs bg-purple-600 hover:bg-purple-700 text-white shrink-0 shadow-xs"
+                  >
+                    Open Live Dashboard <ArrowRight className="h-3 w-3 ml-1.5" />
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Participant Identity Configuration */}
+            <div className="space-y-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div>
+                <label className="font-bold text-gray-800 dark:text-gray-200 block">
+                  Participant Identity Field
+                </label>
+                <p className="text-gray-500 text-[11px] mt-0.5">
+                  Select a form question used to uniquely identify each participant (e.g. Employee ID, Student ID, Email, Registration Number)
+                </p>
+              </div>
+
+              <div className="max-w-md">
+                <Select
+                  value={settings?.quizIdentityQuestionId || 'NONE'}
+                  onValueChange={(val) =>
+                    onChangeSettings({ quizIdentityQuestionId: val === 'NONE' ? null : val })
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select identity question..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE" className="text-xs">
+                      -- None (Use respondent email or anonymous identity) --
+                    </SelectItem>
+                    {questions
+                      .filter((q) => q.type !== 'SECTION_HEADER' && q.type !== 'TEXT_BLOCK' && q.type !== 'IMAGE_BLOCK' && q.type !== 'VIDEO_EMBED')
+                      .map((q) => (
+                        <SelectItem key={q.id} value={q.id} className="text-xs">
+                          {q.title || 'Untitled Question'} ({q.type.replace('_', ' ')})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Expected Participants & Authorized Roster */}
+            <div className="space-y-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div>
+                <label className="font-bold text-gray-800 dark:text-gray-200 block">
+                  Expected Participants & Access Authorization
+                </label>
+                <p className="text-gray-500 text-[11px] mt-0.5">
+                  Configure whether access is limited to an authorized participant roster or open with an expected count
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div
+                  onClick={() => onChangeSettings({ quizRosterMode: 'COUNT_ONLY' })}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col gap-1 ${
+                    (settings?.quizRosterMode ?? 'COUNT_ONLY') === 'COUNT_ONLY'
+                      ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
+                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                      Method A: Expected Count
+                    </span>
+                    {(settings?.quizRosterMode ?? 'COUNT_ONLY') === 'COUNT_ONLY' && (
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Estimate aggregate progress based on an expected count (e.g. 100 participants)
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => onChangeSettings({ quizRosterMode: 'ROSTER' })}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col gap-1 ${
+                    settings?.quizRosterMode === 'ROSTER'
+                      ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
+                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                      Method B: Authorized Roster
+                    </span>
+                    {settings?.quizRosterMode === 'ROSTER' && (
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Enforce strict roster authorization and monitor individual &apos;Not Started&apos; participants
+                  </p>
+                </div>
+              </div>
+
+              {(settings?.quizRosterMode ?? 'COUNT_ONLY') === 'COUNT_ONLY' ? (
+                <div className="pt-1 flex items-center gap-3">
+                  <label className="text-gray-700 dark:text-gray-300 font-medium whitespace-nowrap">
+                    Expected Participant Count:
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    placeholder="e.g. 100"
+                    value={settings?.quizExpectedParticipants ?? ''}
+                    onChange={(e) =>
+                      onChangeSettings({
+                        quizExpectedParticipants: e.target.value ? parseInt(e.target.value, 10) : null,
+                      })
+                    }
+                    className="h-8 text-xs w-28"
+                  />
+                </div>
+              ) : (
+                <div className="pt-1 flex items-center justify-between p-3 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800">
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-gray-100">
+                      Roster Management
+                    </p>
+                    <p className="text-[11px] text-gray-500">
+                      {rosterCount !== null ? `${rosterCount} authorized participants` : 'Manage allowed IDs and names'}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsRosterModalOpen(true)}
+                    className="h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-100"
+                  >
+                    <Users className="h-3.5 w-3.5 mr-1.5" /> Manage Roster
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Quiz Timers Configuration */}
+            <div className="space-y-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div>
+                <label className="font-bold text-gray-800 dark:text-gray-200 block">
+                  Timer Configuration
+                </label>
+                <p className="text-gray-500 text-[11px] mt-0.5">
+                  Configure server-enforced countdown timers. Timers remain valid across browser refreshes and cannot be manipulated.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { id: 'NONE', label: 'No Timers', desc: 'Untimed quiz' },
+                  { id: 'QUESTION', label: 'Per-Question', desc: 'Individual question timers' },
+                  { id: 'OVERALL', label: 'Overall Duration', desc: 'Total quiz time limit' },
+                  { id: 'BOTH', label: 'Both Timers', desc: 'Overall + Question limits' },
+                ].map((mode) => (
+                  <div
+                    key={mode.id}
+                    onClick={() => onChangeSettings({ quizTimerMode: mode.id })}
+                    className={`p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col gap-0.5 ${
+                      (settings?.quizTimerMode ?? 'NONE') === mode.id
+                        ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
+                        : 'border-gray-200 dark:border-gray-800 hover:border-gray-300'
+                    }`}
+                  >
+                    <span className="font-semibold text-gray-900 dark:text-gray-100 text-[11px]">
+                      {mode.label}
+                    </span>
+                    <span className="text-[10px] text-gray-400">{mode.desc}</span>
+                  </div>
+                ))}
+              </div>
+
+              {((settings?.quizTimerMode === 'OVERALL') || (settings?.quizTimerMode === 'BOTH')) && (
+                <div className="pt-2 flex items-center gap-3">
+                  <label className="text-gray-700 dark:text-gray-300 font-medium whitespace-nowrap">
+                    Total Quiz Duration (Minutes):
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min="1"
+                      max="1440"
+                      placeholder="e.g. 30"
+                      value={settings?.quizDurationMinutes ?? ''}
+                      onChange={(e) =>
+                        onChangeSettings({
+                          quizDurationMinutes: e.target.value ? parseInt(e.target.value, 10) : null,
+                        })
+                      }
+                      className="h-8 text-xs w-28"
+                    />
+                    <span className="text-xs text-gray-500 font-medium">min</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Navigation Policy */}
+            <div className="space-y-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div>
+                <label className="font-bold text-gray-800 dark:text-gray-200 block">
+                  Question Navigation Policy
+                </label>
+                <p className="text-gray-500 text-[11px] mt-0.5">
+                  Control whether participants can revisit earlier questions
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div
+                  onClick={() => onChangeSettings({ quizNavigationPolicy: 'BACKWARD_ENABLED' })}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col gap-1 ${
+                    (settings?.quizNavigationPolicy ?? 'BACKWARD_ENABLED') === 'BACKWARD_ENABLED'
+                      ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
+                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                      Allow Backward Navigation
+                    </span>
+                    {(settings?.quizNavigationPolicy ?? 'BACKWARD_ENABLED') === 'BACKWARD_ENABLED' && (
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Respondents can move freely between questions and modify answers while time allows
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => onChangeSettings({ quizNavigationPolicy: 'FORWARD_ONLY' })}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col gap-1 ${
+                    settings?.quizNavigationPolicy === 'FORWARD_ONLY'
+                      ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
+                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                      Forward-Only Navigation
+                    </span>
+                    {settings?.quizNavigationPolicy === 'FORWARD_ONLY' && (
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Once respondents advance to the next question, previous questions are locked permanently
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Automatic Timeout Behavior Info */}
+            <div className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+              <Hourglass className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+              <div>
+                <p className="font-semibold text-xs">Secure Server-Side Timeout Policy</p>
+                <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80 mt-0.5">
+                  When the overall quiz timer or question deadline expires, FormCraft automatically finalizes and scores the attempt, saving all valid responses submitted before the cutoff.
+                </p>
+              </div>
+            </div>
           </CardContent>
         )}
       </Card>
+
+      {/* Roster Modal */}
+      {formId && (
+        <QuizRosterModal
+          isOpen={isRosterModalOpen}
+          onClose={() => setIsRosterModalOpen(false)}
+          formId={formId}
+          onRosterUpdated={(cnt) => setRosterCount(cnt)}
+        />
+      )}
 
       {/* 2. Responses Settings */}
       <Card className="border-gray-200 dark:border-gray-800 shadow-sm">

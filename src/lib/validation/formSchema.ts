@@ -46,6 +46,13 @@ export const formSettingsSchema = z.object({
   quizPassMessage: z.string().optional().default('Congratulations! You passed the quiz.'),
   quizFailMessage: z.string().optional().default('Unfortunately, you did not reach the passing score.'),
   quizDefaultPoints: z.number().int().min(0).optional().default(1),
+  quizTimerMode: z.enum(['NONE', 'QUESTION', 'OVERALL', 'BOTH']).optional().default('NONE'),
+  quizDurationMinutes: z.union([z.number().int().min(1).max(1440), z.null(), z.literal('')]).optional().transform((v) => (v === '' || v === null || v === undefined ? null : Number(v))),
+  quizNavigationPolicy: z.enum(['BACKWARD_ENABLED', 'FORWARD_ONLY']).optional().default('BACKWARD_ENABLED'),
+  quizTimeoutBehavior: z.enum(['AUTO_FINALIZE']).optional().default('AUTO_FINALIZE'),
+  quizIdentityQuestionId: z.string().nullable().optional(),
+  quizExpectedParticipants: z.union([z.number().int().min(1), z.null(), z.literal('')]).optional().transform((v) => (v === '' || v === null || v === undefined ? null : Number(v))),
+  quizRosterMode: z.enum(['COUNT_ONLY', 'ROSTER']).optional().default('COUNT_ONLY'),
 });
 
 export const createFormSchema = z.object({

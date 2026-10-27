@@ -83,6 +83,7 @@ export async function POST(
               quizPoints: q.quizPoints || 0,
               quizAnswer: q.quizAnswer || {},
               quizExplanation: q.quizExplanation || '',
+              timeLimitSeconds: q.timeLimitSeconds ?? 0,
             },
           });
 

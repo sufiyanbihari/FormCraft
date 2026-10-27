@@ -883,6 +883,9 @@ function FormBuilderContent() {
             settings={settings}
             onChangeSettings={(delta) => setSettings((prev: any) => ({ ...prev, ...delta }))}
             primaryColor={theme.primaryColor}
+            questions={questions}
+            formId={form.id}
+            onOpenLiveDashboard={() => setActiveTab('responses')}
           />
         )}
       </main>
