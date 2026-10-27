@@ -179,6 +179,7 @@ function PublicFormContent() {
   const [submissionResult, setSubmissionResult] = useState<any>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [uploadingFiles, setUploadingFiles] = useState<Record<string, boolean>>({});
+  const [fileUploadProgress, setFileUploadProgress] = useState<Record<string, number>>({});
   const [fileErrors, setFileErrors] = useState<Record<string, string | null>>({});
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
@@ -699,6 +700,7 @@ function PublicFormContent() {
     }
 
     setUploadingFiles((prev) => ({ ...prev, [qId]: true }));
+    setFileUploadProgress((prev) => ({ ...prev, [qId]: 0 }));
     setFileErrors((prev) => ({ ...prev, [qId]: null }));
 
     try {
@@ -706,6 +708,9 @@ function PublicFormContent() {
       const data = await uploadFile(file, {
         formId: formData?.id,
         maxSizeMb: maxMb,
+        onProgress: (percent) => {
+          setFileUploadProgress((prev) => ({ ...prev, [qId]: percent }));
+        },
       });
 
       console.log('[FormCraft File Upload] Upload succeeded:', data);
@@ -2780,10 +2785,23 @@ function PublicFormContent() {
                         }}
                       />
                       {uploadingFiles[q.id] ? (
-                        <div className="flex flex-col items-center gap-2 text-sky-600 py-3 pointer-events-none">
+                        <div className="flex flex-col items-center gap-2 text-sky-600 py-3 pointer-events-none w-full max-w-xs">
                           <Loader2 className="h-8 w-8 animate-spin" />
-                          <span className="text-xs font-bold">Uploading file, please wait...</span>
-                          <span className="text-[11px] text-gray-500">Sending to server...</span>
+                          <span className="text-xs font-bold">
+                            {fileUploadProgress[q.id] && fileUploadProgress[q.id] > 0
+                              ? `Uploading file... ${fileUploadProgress[q.id]}%`
+                              : 'Uploading file, please wait...'}
+                          </span>
+                          {fileUploadProgress[q.id] && fileUploadProgress[q.id] > 0 ? (
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 h-1.5 rounded-full overflow-hidden mt-1">
+                              <div
+                                className="bg-sky-600 h-full rounded-full transition-all duration-300"
+                                style={{ width: `${fileUploadProgress[q.id]}%` }}
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-gray-500">Sending to server...</span>
+                          )}
                         </div>
                       ) : (
                         <div className="flex flex-col items-center pointer-events-none text-center">

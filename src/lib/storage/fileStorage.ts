@@ -240,9 +240,24 @@ export async function ensureDatabaseStorageTable(): Promise<void> {
     await prisma.$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS idx_uploaded_file_data_created ON uploaded_file_data(created_at);
     `);
+
+    // Ensure table for temporary chunks (for bypassing Vercel 4.5MB serverless payload limit)
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS uploaded_file_chunks (
+        file_key VARCHAR(255) NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        total_chunks INTEGER NOT NULL,
+        data BYTEA NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (file_key, chunk_index)
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS idx_uploaded_file_chunks_key ON uploaded_file_chunks(file_key);
+    `);
     dbTableEnsured = true;
   } catch (err) {
-    console.warn('[FileStorage] Could not ensure uploaded_file_data table:', err);
+    console.warn('[FileStorage] Could not ensure uploaded_file_data / chunks table:', err);
   }
 }
 
@@ -780,7 +795,7 @@ export async function migrateLocalFilesToStorage(
 // (Bypasses Vercel 4.5MB Serverless Payload Limits for Video)
 // -------------------------------------------------------------
 export interface PresignedUploadResult {
-  mode: 'signed_url' | 'vercel_blob' | 'direct_api';
+  mode: 'signed_url' | 'vercel_blob' | 'direct_api' | 'chunked';
   provider: StorageProviderType;
   uploadUrl: string;
   fileKey: string;
@@ -789,6 +804,8 @@ export interface PresignedUploadResult {
   method?: 'PUT' | 'POST';
   headers?: Record<string, string>;
   clientToken?: string;
+  chunkSize?: number;
+  totalChunks?: number;
 }
 
 export async function createPresignedUploadUrl(params: {
@@ -885,17 +902,25 @@ export async function createPresignedUploadUrl(params: {
     };
   }
 
-  // 3. Fallback: Direct API route (for smaller files / images or local development)
-  // Check if deployed on Vercel without cloud object storage credentials
-  if (
-    (process.env.VERCEL || process.env.NODE_ENV === 'production') &&
-    params.fileSize > 4.5 * 1024 * 1024
-  ) {
-    throw new Error(
-      `File size (${formatBytes(params.fileSize)}) exceeds the Vercel 4.5MB serverless body limit. Please configure S3_BUCKET or BLOB_READ_WRITE_TOKEN in your Vercel project settings to enable direct object-storage uploads.`
-    );
+  // 3. Fallback: Chunked Upload Engine
+  // For files > 4MB (such as large videos or documents), slice into 3MB chunks
+  // to safely bypass Vercel's 4.5MB serverless request body payload limit.
+  const CHUNK_SIZE = 3 * 1024 * 1024; // 3.0 MB per chunk (well under Vercel 4.5MB limit)
+  if (params.fileSize > 4 * 1024 * 1024) {
+    const totalChunks = Math.ceil(params.fileSize / CHUNK_SIZE);
+    return {
+      mode: 'chunked',
+      provider,
+      uploadUrl: '/api/uploads/chunk',
+      method: 'POST',
+      fileKey,
+      publicUrl,
+      chunkSize: CHUNK_SIZE,
+      totalChunks,
+    };
   }
 
+  // 4. Fallback: Direct API route (for smaller files / images <= 4MB)
   return {
     mode: 'direct_api',
     provider,

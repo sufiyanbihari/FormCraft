@@ -271,6 +271,7 @@ export default function QuestionCard({
   const imageFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [hasVideoLoadError, setHasVideoLoadError] = useState(false);
   const [videoRetryCount, setVideoRetryCount] = useState(0);
@@ -470,7 +471,11 @@ export default function QuestionCard({
     } catch {}
 
     try {
-      const data = await uploadFile(file, { maxSizeMb: maxMb });
+      setVideoUploadProgress(0);
+      const data = await uploadFile(file, {
+        maxSizeMb: maxMb,
+        onProgress: (percent) => setVideoUploadProgress(percent),
+      });
       if (data && data.publicUrl) {
         setHasVideoLoadError(false);
         setVideoRetryCount(0);
@@ -2058,9 +2063,21 @@ export default function QuestionCard({
                   }`}
                 >
                   {isUploadingVideo ? (
-                    <div className="flex flex-col items-center gap-2 text-purple-600 py-2">
+                    <div className="flex flex-col items-center gap-2 text-purple-600 py-2 w-full max-w-xs">
                       <Loader2 className="h-7 w-7 animate-spin" />
-                      <span className="text-xs font-semibold">Uploading video...</span>
+                      <span className="text-xs font-semibold">
+                        {videoUploadProgress > 0
+                          ? `Uploading video... ${videoUploadProgress}%`
+                          : 'Uploading video...'}
+                      </span>
+                      {videoUploadProgress > 0 && (
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 h-1.5 rounded-full overflow-hidden mt-1">
+                          <div
+                            className="bg-purple-600 h-full rounded-full transition-all duration-300"
+                            style={{ width: `${videoUploadProgress}%` }}
+                          />
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>

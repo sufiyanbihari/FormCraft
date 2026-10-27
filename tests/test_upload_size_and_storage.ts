@@ -258,20 +258,27 @@ async function runTests() {
     delete process.env.AWS_S3_BUCKET;
     delete process.env.BLOB_READ_WRITE_TOKEN;
 
-    let vercelLimitCaught = false;
-    try {
-      await createPresignedUploadUrl({
-        fileName: 'sample-large-video.mp4',
-        fileSize: 10 * 1024 * 1024, // 10MB
-        mimeType: 'video/mp4',
-      });
-    } catch (err: any) {
-      vercelLimitCaught = true;
-      assert(err.message.includes('Vercel 4.5MB serverless body limit'));
-      assert(err.message.includes('Please configure S3_BUCKET or BLOB_READ_WRITE_TOKEN'));
-    }
-    assert(vercelLimitCaught, 'Should catch Vercel 4.5MB limit in production when no object storage configured');
-    console.log('  ✓ Vercel 4.5MB serverless limit guardrail triggers actionable error in production\n');
+    const presignChunked = await createPresignedUploadUrl({
+      fileName: 'sample-large-video.mp4',
+      fileSize: 10 * 1024 * 1024, // 10MB
+      mimeType: 'video/mp4',
+    });
+    assert.strictEqual(
+      presignChunked.mode,
+      'chunked',
+      'Should switch to chunked mode on Vercel for files > 4MB when no cloud object storage configured'
+    );
+    assert.strictEqual(
+      presignChunked.uploadUrl,
+      '/api/uploads/chunk',
+      'Upload URL should route to /api/uploads/chunk'
+    );
+    assert.strictEqual(
+      presignChunked.chunkSize,
+      3 * 1024 * 1024,
+      'Chunk size must be 3MB'
+    );
+    console.log('  ✓ Vercel serverless environment seamlessly routes > 4MB files to chunked upload engine\n');
   } finally {
     if (prevVercelEnv !== undefined) {
       process.env.VERCEL = prevVercelEnv;

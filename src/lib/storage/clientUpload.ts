@@ -96,7 +96,18 @@ export async function uploadFile(
     };
   }
 
-  // 3. Mode: Direct API (local development, database storage, or small files)
+  // 3. Mode: Vercel Blob Direct Client Upload
+  if (presignData.mode === 'vercel_blob') {
+    return uploadVercelBlob(file, presignData, options);
+  }
+
+  // 4. Mode: Chunked Upload Engine (for files > 4MB without external cloud storage)
+  // Slices large files/videos into 3MB chunks to bypass Vercel 4.5MB serverless limits
+  if (presignData.mode === 'chunked') {
+    return uploadChunked(file, presignData, options);
+  }
+
+  // 5. Mode: Direct API (local development, database storage, or small files)
   return uploadDirectApi(file, options);
 }
 
@@ -196,3 +207,140 @@ async function uploadDirectApi(
     mimeType: data.mimeType || file.type,
   };
 }
+
+/**
+ * Uploads large files (such as videos > 4MB) in 3.0 MB sequential slices.
+ * Bypasses Vercel's 4.5MB serverless body limit while providing real-time progress reporting.
+ */
+async function uploadChunked(
+  file: File,
+  presignData: any,
+  options?: ClientUploadOptions
+): Promise<ClientUploadResult> {
+  const chunkSize = presignData.chunkSize || 3 * 1024 * 1024; // 3.0 MB
+  const totalChunks = Math.ceil(file.size / chunkSize);
+  const fileKey = presignData.fileKey;
+
+  let lastResult: any = null;
+
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const start = chunkIndex * chunkSize;
+    const end = Math.min(start + chunkSize, file.size);
+    const chunkBlob = file.slice(start, end);
+
+    const formData = new FormData();
+    formData.append('chunk', chunkBlob, `${file.name}.part${chunkIndex}`);
+    formData.append('fileKey', fileKey);
+    formData.append('fileName', file.name);
+    formData.append('mimeType', file.type || presignData.mimeType || 'application/octet-stream');
+    formData.append('chunkIndex', String(chunkIndex));
+    formData.append('totalChunks', String(totalChunks));
+    if (options?.formId) {
+      formData.append('formId', options.formId);
+    }
+
+    // Upload chunk with automatic retry mechanism (up to 3 attempts per chunk)
+    let attempt = 0;
+    let success = false;
+    let resData: any = null;
+
+    while (attempt < 3 && !success) {
+      attempt++;
+      try {
+        const res = await fetch(presignData.uploadUrl || '/api/uploads/chunk', {
+          method: 'POST',
+          body: formData,
+        });
+
+        resData = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            resData?.error || `Chunk ${chunkIndex + 1}/${totalChunks} failed with status ${res.status}`
+          );
+        }
+        success = true;
+      } catch (err: any) {
+        if (attempt >= 3) {
+          throw new Error(
+            `Upload failed on part ${chunkIndex + 1} of ${totalChunks}: ${err?.message || 'Network error'}`
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+      }
+    }
+
+    lastResult = resData;
+
+    // Report real-time chunk progress
+    if (options?.onProgress) {
+      const percent = Math.min(99, Math.round(((chunkIndex + 1) / totalChunks) * 100));
+      options.onProgress(percent);
+    }
+  }
+
+  if (!lastResult || !lastResult.isComplete) {
+    throw new Error('Upload complete but server failed to confirm file assembly');
+  }
+
+  if (options?.onProgress) {
+    options.onProgress(100);
+  }
+
+  return {
+    file: lastResult.file,
+    publicUrl: lastResult.publicUrl || `/uploads/${fileKey}`,
+    directUrl: lastResult.directUrl || lastResult.publicUrl || `/uploads/${fileKey}`,
+    fileName: lastResult.fileName || file.name,
+    fileSize: lastResult.fileSize || file.size,
+    mimeType: lastResult.mimeType || file.type || 'application/octet-stream',
+  };
+}
+
+/**
+ * Direct client upload for Vercel Blob when BLOB_READ_WRITE_TOKEN is configured.
+ */
+async function uploadVercelBlob(
+  file: File,
+  presignData: any,
+  options?: ClientUploadOptions
+): Promise<ClientUploadResult> {
+  const { upload } = await import('@vercel/blob/client');
+  const blob = await upload(presignData.fileKey || file.name, file, {
+    access: 'public',
+    handleUploadUrl: '/api/uploads/presigned',
+    clientPayload: JSON.stringify({ formId: options?.formId }),
+    onUploadProgress: (progress) => {
+      if (options?.onProgress) {
+        options.onProgress(Math.min(100, Math.round(progress.percentage)));
+      }
+    },
+  });
+
+  const completeRes = await fetch('/api/uploads/complete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fileKey: presignData.fileKey || blob.pathname,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type || 'application/octet-stream',
+      formId: options?.formId,
+      directUrl: blob.url,
+    }),
+  });
+
+  const completeData = await completeRes.json().catch(() => ({}));
+  if (options?.onProgress) {
+    options.onProgress(100);
+  }
+
+  return {
+    file: completeData?.file,
+    publicUrl: completeData?.publicUrl || blob.url,
+    directUrl: blob.url,
+    fileName: file.name,
+    fileSize: file.size,
+    mimeType: file.type || 'application/octet-stream',
+  };
+}
+
