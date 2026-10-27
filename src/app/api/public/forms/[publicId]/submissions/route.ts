@@ -8,6 +8,8 @@ import { FieldMapping } from '@/lib/lookup/lookupTypes';
 import { formatSizeMb } from '@/lib/utils';
 import crypto from 'crypto';
 import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
+import { ensureResponseControlSchema } from '@/lib/db/ensureResponseControlSchema';
+import { resolveParticipantIdentifier, checkDuplicateSubmission } from '@/lib/submission/duplicatePreventionService';
 
 export async function POST(
   request: NextRequest,
@@ -15,6 +17,7 @@ export async function POST(
 ) {
   try {
     await ensureQuizSchema();
+    await ensureResponseControlSchema();
     const { publicId } = await params;
 
     const form = await prisma.form.findUnique({
@@ -82,23 +85,6 @@ export async function POST(
       );
     }
 
-    // 3. Enforce single submission rule if enabled
-    if (settings?.restrictOneResponse && authenticatedUser) {
-      const existing = await prisma.formSubmission.findFirst({
-        where: {
-          formId: form.id,
-          respondentUserId: authenticatedUser.id,
-        },
-      });
-
-      if (existing) {
-        return NextResponse.json(
-          { error: 'You have already submitted a response for this form.' },
-          { status: 409 }
-        );
-      }
-    }
-
     const body = await request.json();
     const parseResult = submitFormSchema.safeParse(body);
 
@@ -110,6 +96,30 @@ export async function POST(
     }
 
     const { answers, cattleOwners, respondentEmail, idempotencyKey } = parseResult.data;
+
+    // Client IP hashing
+    const ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
+    const ipHash = crypto.createHash('sha256').update(ip).digest('hex').substring(0, 32);
+
+    // 3. Resolve participant identity for duplicate response prevention if active
+    let resolvedIdentity: any = null;
+    if (settings?.restrictOneResponse) {
+      const idResult = resolveParticipantIdentifier({
+        settings,
+        authenticatedUser,
+        respondentEmail,
+        answers,
+        ipHash,
+      });
+
+      if (!idResult.success) {
+        return NextResponse.json(
+          { error: idResult.error },
+          { status: idResult.statusCode }
+        );
+      }
+      resolvedIdentity = idResult.identity;
+    }
 
     // Validate cattle owners entries if provided
     if (cattleOwners && cattleOwners.length > 0) {
@@ -383,10 +393,6 @@ export async function POST(
       }
     }
 
-    // Client IP hashing for best-effort duplicate protection
-    const ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
-    const ipHash = crypto.createHash('sha256').update(ip).digest('hex').substring(0, 32);
-
     // Release grade determination
     const isImmediate = (form.settings?.quizReleaseGrade ?? 'IMMEDIATE') === 'IMMEDIATE';
     const isGradeReleased = form.isQuiz ? isImmediate : false;
@@ -394,6 +400,22 @@ export async function POST(
 
     // Persist submission transactionally
     const submission = await prisma.$transaction(async (tx) => {
+      // Enforce duplicate restriction inside transaction with advisory lock
+      if (settings?.restrictOneResponse && resolvedIdentity) {
+        const dupCheck = await checkDuplicateSubmission(tx, {
+          formId: form.id,
+          settings,
+          identity: resolvedIdentity,
+          now,
+        });
+
+        if (dupCheck.isDuplicate) {
+          const err = new Error('DUPLICATE_SUBMISSION_DETECTED');
+          (err as any).dupCheck = dupCheck;
+          throw err;
+        }
+      }
+
       const sub = await tx.formSubmission.create({
         data: {
           formId: form.id,
@@ -581,7 +603,19 @@ export async function POST(
       isGradeReleased,
       score: quizResult,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message === 'DUPLICATE_SUBMISSION_DETECTED' || error?.dupCheck) {
+      const dup = error?.dupCheck;
+      return NextResponse.json(
+        {
+          error: dup?.message || 'You have already submitted a response for this form.',
+          isDuplicate: true,
+          canEdit: Boolean(dup?.canEdit),
+          editToken: dup?.editToken,
+        },
+        { status: 409 }
+      );
+    }
     console.error('Failed to submit form:', error);
     return NextResponse.json({ error: 'Failed to process submission' }, { status: 500 });
   }

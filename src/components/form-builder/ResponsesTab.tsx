@@ -908,9 +908,16 @@ export default function ResponsesTab({
                     className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 shadow-sm flex items-start justify-between gap-4"
                   >
                     <div>
-                      <p className="text-xs text-gray-400 mb-1">
-                        Respondent: {sub.respondentEmail || 'Anonymous'} •{' '}
-                        {new Date(sub.submittedAt).toLocaleString()}
+                      <p className="text-xs text-gray-400 mb-1 flex items-center gap-2 flex-wrap">
+                        <span>
+                          Respondent: {sub.respondentEmail || 'Anonymous'} •{' '}
+                          {new Date(sub.submittedAt).toLocaleString()}
+                        </span>
+                        {sub.editCount && sub.editCount > 0 ? (
+                          <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                            Edited ({sub.editCount}x)
+                          </span>
+                        ) : null}
                       </p>
                       <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
                         {renderAnswerValue(answer.value)}
@@ -997,8 +1004,13 @@ export default function ResponsesTab({
                     <span className="font-semibold text-gray-800 dark:text-gray-200 text-sm">
                       {submissions[individualIndex].respondentEmail || 'Anonymous Respondent'}
                     </span>
-                    <p className="text-[11px] text-gray-400 mt-0.5">
-                      Submitted at {new Date(submissions[individualIndex].submittedAt).toLocaleString()}
+                    <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap">
+                      <span>Submitted at {new Date(submissions[individualIndex].submittedAt).toLocaleString()}</span>
+                      {submissions[individualIndex].editCount && submissions[individualIndex].editCount > 0 ? (
+                        <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                          Edited ({submissions[individualIndex].editCount}x) — Last updated {new Date(submissions[individualIndex].lastEditedAt || submissions[individualIndex].submittedAt).toLocaleString()}
+                        </span>
+                      ) : null}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">

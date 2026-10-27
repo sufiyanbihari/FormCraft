@@ -276,6 +276,8 @@ export async function GET(
             submissionId: s.id,
             ownerOrderIndex: co.orderIndex + 1,
             submittedAt: s.submittedAt,
+            lastEditedAt: s.lastEditedAt,
+            editCount: s.editCount || 0,
             respondentEmail: s.respondentEmail || s.respondent?.email || 'Anonymous',
             cattleOwner: {
               ownerName: co.ownerName,
@@ -309,6 +311,8 @@ export async function GET(
         return [{
           id: s.id,
           submittedAt: s.submittedAt,
+          lastEditedAt: s.lastEditedAt,
+          editCount: s.editCount || 0,
           respondentEmail: s.respondentEmail || s.respondent?.email || 'Anonymous',
           totalScore: s.totalScore,
           answers: s.answers.map((a) => {
@@ -335,6 +339,8 @@ export async function GET(
     const headers = [
       'Submission ID',
       'Submission Date',
+      'Last Edited Date',
+      'Edit Count',
       'Respondent Email',
       ...(form.isQuiz ? ['Quiz Score', 'Max Score', 'Percentage', 'Grade Status'] : []),
       ...questions.map((q) => q.title),
@@ -360,6 +366,8 @@ export async function GET(
           const rowValues = [
             `${sub.id}-${co.orderIndex + 1}`,
             sub.submittedAt.toISOString(),
+            sub.lastEditedAt ? sub.lastEditedAt.toISOString() : '',
+            sub.editCount || 0,
             sub.respondentEmail || sub.respondent?.email || 'Anonymous',
             ...quizStats,
             ...questions.map((q) => {
@@ -387,6 +395,8 @@ export async function GET(
       const rowValues = [
         sub.id,
         sub.submittedAt.toISOString(),
+        sub.lastEditedAt ? sub.lastEditedAt.toISOString() : '',
+        sub.editCount || 0,
         sub.respondentEmail || sub.respondent?.email || 'Anonymous',
         ...quizStats,
         ...questions.map((q) => {

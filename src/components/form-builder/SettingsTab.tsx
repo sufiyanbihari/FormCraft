@@ -5,7 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Award, Mail, Clock, Eye, ShieldCheck, Sliders, Calendar, Users, Hourglass, Navigation, AlertTriangle, ArrowRight, ExternalLink } from 'lucide-react';
+import { Award, Mail, Clock, Eye, ShieldCheck, Sliders, Calendar, Users, Hourglass, Navigation, AlertTriangle, ArrowRight, ExternalLink, Edit3, Key, Lock, CheckCircle2, Link2, Info } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import QuizRosterModal from './QuizRosterModal';
@@ -575,34 +575,307 @@ export default function SettingsTab({
             />
           </div>
 
-          <div className="py-3 flex items-center justify-between">
-            <div>
-              <p className="font-semibold text-gray-800 dark:text-gray-200">
-                Limit to 1 response per person
-              </p>
-              <p className="text-gray-500 text-[11px]">
-                Prevents duplicate responses from the same respondent account
-              </p>
+          {/* Duplicate Response Prevention Section */}
+          <div className="py-4 space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-gray-800 dark:text-gray-200">
+                  Duplicate response prevention
+                </p>
+                <p className="text-gray-500 text-[11px]">
+                  Restrict respondents from submitting this form multiple times
+                </p>
+              </div>
+              <Switch
+                checked={settings?.restrictOneResponse || false}
+                onCheckedChange={(checked) => onChangeSettings({ restrictOneResponse: checked })}
+              />
             </div>
-            <Switch
-              checked={settings?.restrictOneResponse || false}
-              onCheckedChange={(checked) => onChangeSettings({ restrictOneResponse: checked, requireAuth: checked ? true : settings?.requireAuth })}
-            />
+
+            {settings?.restrictOneResponse && (
+              <div className="p-3.5 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/70 dark:border-purple-800/60 space-y-3 text-xs animate-in fade-in">
+                {/* Identification Method */}
+                <div>
+                  <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                    Participant Identification Method
+                  </label>
+                  <Select
+                    value={settings?.duplicateIdentifierMethod || 'AUTH_USER'}
+                    onValueChange={(val) => {
+                      const updates: any = { duplicateIdentifierMethod: val };
+                      if (val === 'AUTH_USER') updates.requireAuth = true;
+                      if (val === 'VERIFIED_EMAIL') updates.collectEmail = true;
+                      onChangeSettings(updates);
+                    }}
+                  >
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="Select identification method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="AUTH_USER">
+                        Signed-in Account (Requires login, matches user ID)
+                      </SelectItem>
+                      <SelectItem value="VERIFIED_EMAIL">
+                        Email Address (Requires email collection or login)
+                      </SelectItem>
+                      <SelectItem value="QUESTION_FIELD">
+                        Specific Question (e.g. Employee ID, Student ID, Mobile)
+                      </SelectItem>
+                      <SelectItem value="IP_ADDRESS">
+                        Client Device / IP (Best-effort anonymous protection)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Identity Question Field Selector */}
+                {settings?.duplicateIdentifierMethod === 'QUESTION_FIELD' && (
+                  <div>
+                    <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                      Identity Question
+                    </label>
+                    <Select
+                      value={settings?.duplicateIdentifierQuestionId || ''}
+                      onValueChange={(val) => onChangeSettings({ duplicateIdentifierQuestionId: val })}
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue placeholder="Select the identity question..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {questions
+                          .filter((q) => q.type !== 'SECTION_HEADER' && q.type !== 'TEXT_BLOCK')
+                          .map((q) => (
+                            <SelectItem key={q.id} value={q.id}>
+                              {q.title || 'Untitled Question'} ({q.type})
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      Submissions with matching responses to this field will be rejected as duplicates.
+                    </p>
+                  </div>
+                )}
+
+                {/* Restriction Scope */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                      Restriction Scope
+                    </label>
+                    <Select
+                      value={settings?.duplicateRestrictionScope || 'ONCE_PER_FORM'}
+                      onValueChange={(val) => onChangeSettings({ duplicateRestrictionScope: val })}
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue placeholder="Select restriction scope" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ONCE_PER_FORM">
+                          Once per form (Permanent)
+                        </SelectItem>
+                        <SelectItem value="PERIODIC">
+                          Time-based window (Periodic)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {settings?.duplicateRestrictionScope === 'PERIODIC' && (
+                    <div>
+                      <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                        Restriction Frequency
+                      </label>
+                      <Select
+                        value={settings?.duplicateRestrictionPeriod || 'DAILY'}
+                        onValueChange={(val) => onChangeSettings({ duplicateRestrictionPeriod: val })}
+                      >
+                        <SelectTrigger className="h-9 text-xs">
+                          <SelectValue placeholder="Select period" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="DAILY">Once per calendar day (UTC)</SelectItem>
+                          <SelectItem value="WEEKLY">Once per calendar week</SelectItem>
+                          <SelectItem value="MONTHLY">Once per calendar month</SelectItem>
+                          <SelectItem value="CUSTOM_HOURS">Custom rolling duration</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+
+                {settings?.duplicateRestrictionScope === 'PERIODIC' && settings?.duplicateRestrictionPeriod === 'CUSTOM_HOURS' && (
+                  <div>
+                    <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                      Custom Duration (Hours)
+                    </label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="8760"
+                      value={settings?.duplicateCustomHours ?? 24}
+                      onChange={(e) => onChangeSettings({ duplicateCustomHours: parseInt(e.target.value, 10) || 24 })}
+                      className="h-9 text-xs max-w-xs"
+                    />
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      Respondents can submit again only after this duration has elapsed since their last submission.
+                    </p>
+                  </div>
+                )}
+
+                <div className="p-2.5 rounded-lg bg-white/70 dark:bg-gray-900/60 border border-purple-200/60 dark:border-purple-900/40 text-[11px] text-purple-900 dark:text-purple-300 flex items-start gap-2">
+                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-purple-600 mt-0.5" />
+                  <span>
+                    Concurrent submissions are serialized and verified atomically on the server. If response editing is enabled, blocked participants will be offered an option to edit their previous response.
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="py-3 flex items-center justify-between">
-            <div>
-              <p className="font-semibold text-gray-800 dark:text-gray-200">
-                Allow response editing
-              </p>
-              <p className="text-gray-500 text-[11px]">
-                Respondents can modify their answers after submission
-              </p>
+          {/* Controlled Response Editing Section */}
+          <div className="py-4 space-y-3.5 border-t border-gray-100 dark:border-gray-800">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-gray-800 dark:text-gray-200">
+                  Allow response editing
+                </p>
+                <p className="text-gray-500 text-[11px]">
+                  Permit respondents to modify their previously submitted response
+                </p>
+              </div>
+              <Switch
+                checked={settings?.allowResponseEditing || false}
+                onCheckedChange={(checked) => onChangeSettings({ allowResponseEditing: checked })}
+              />
             </div>
-            <Switch
-              checked={settings?.allowResponseEditing || false}
-              onCheckedChange={(checked) => onChangeSettings({ allowResponseEditing: checked })}
-            />
+
+            {settings?.allowResponseEditing && (
+              <div className="p-3.5 rounded-xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-200/70 dark:border-sky-800/60 space-y-3 text-xs animate-in fade-in">
+                {/* Editing Authorization Method */}
+                <div>
+                  <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                    Editing Authorization Method
+                  </label>
+                  <Select
+                    value={settings?.editingAuthMethod || 'SECURE_EDIT_LINK'}
+                    onValueChange={(val) => {
+                      const updates: any = { editingAuthMethod: val };
+                      if (val === 'AUTH_USER') updates.requireAuth = true;
+                      onChangeSettings(updates);
+                    }}
+                  >
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="Select editing authorization" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SECURE_EDIT_LINK">
+                        Secure Edit Link (Unique token on confirmation screen)
+                      </SelectItem>
+                      <SelectItem value="AUTH_USER">
+                        Signed-in Account Only (Must be logged in to original account)
+                      </SelectItem>
+                      <SelectItem value="BOTH_LINK_AND_AUTH">
+                        Both (Secure link or signed-in account)
+                      </SelectItem>
+                      <SelectItem value="ADMIN_ONLY">
+                        Administrator Only (Owner / editor reviews only)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Editing Window / Deadline Mode */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                      Editing Availability
+                    </label>
+                    <Select
+                      value={settings?.editingWindowMode || 'ALWAYS'}
+                      onValueChange={(val) => onChangeSettings({ editingWindowMode: val })}
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue placeholder="Select editing window" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALWAYS">
+                          Always allowed (Until form closes)
+                        </SelectItem>
+                        <SelectItem value="WITHIN_WINDOW">
+                          Within time limit after submission
+                        </SelectItem>
+                        <SelectItem value="UNTIL_DEADLINE">
+                          Until specific deadline cutoff
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {settings?.editingWindowMode === 'WITHIN_WINDOW' && (
+                    <div>
+                      <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                        Time Allowed to Edit
+                      </label>
+                      <Select
+                        value={String(settings?.editingWindowMinutes ?? 1440)}
+                        onValueChange={(val) => onChangeSettings({ editingWindowMinutes: parseInt(val, 10) })}
+                      >
+                        <SelectTrigger className="h-9 text-xs">
+                          <SelectValue placeholder="Select duration" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="15">15 minutes</SelectItem>
+                          <SelectItem value="30">30 minutes</SelectItem>
+                          <SelectItem value="60">1 hour</SelectItem>
+                          <SelectItem value="120">2 hours</SelectItem>
+                          <SelectItem value="720">12 hours</SelectItem>
+                          <SelectItem value="1440">24 hours (1 day)</SelectItem>
+                          <SelectItem value="2880">48 hours (2 days)</SelectItem>
+                          <SelectItem value="10080">7 days (1 week)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {settings?.editingWindowMode === 'UNTIL_DEADLINE' && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-semibold text-gray-800 dark:text-gray-200">
+                          Editing Cutoff Date & Time
+                        </label>
+                        {settings?.editingDeadline && (
+                          <button
+                            type="button"
+                            onClick={() => onChangeSettings({ editingDeadline: null })}
+                            className="text-[11px] text-red-500 hover:underline"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <Input
+                        type="datetime-local"
+                        value={toLocalInputString(settings?.editingDeadline)}
+                        onChange={(e) =>
+                          onChangeSettings({
+                            editingDeadline: e.target.value ? new Date(e.target.value).toISOString() : null,
+                          })
+                        }
+                        className="h-9 text-xs"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-white/70 dark:bg-gray-900/60 border border-sky-200/60 dark:border-sky-900/40 text-[11px] text-sky-900 dark:text-sky-300 flex items-start gap-2">
+                  <Edit3 className="h-3.5 w-3.5 shrink-0 text-sky-600 mt-0.5" />
+                  <span>
+                    Edits update the original response in-place, preserving the response record and updating responses analytics and exports without creating duplicate entries.
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

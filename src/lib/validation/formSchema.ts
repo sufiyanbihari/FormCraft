@@ -53,6 +53,42 @@ export const formSettingsSchema = z.object({
   quizIdentityQuestionId: z.string().nullable().optional(),
   quizExpectedParticipants: z.union([z.number().int().min(1), z.null(), z.literal('')]).optional().transform((v) => (v === '' || v === null || v === undefined ? null : Number(v))),
   quizRosterMode: z.enum(['COUNT_ONLY', 'ROSTER']).optional().default('COUNT_ONLY'),
+  // Duplicate Response Prevention
+  duplicateIdentifierMethod: z
+    .enum(['AUTH_USER', 'VERIFIED_EMAIL', 'QUESTION_FIELD', 'IP_ADDRESS'])
+    .optional()
+    .default('AUTH_USER'),
+  duplicateIdentifierQuestionId: z.string().nullable().optional(),
+  duplicateRestrictionScope: z
+    .enum(['ONCE_PER_FORM', 'PERIODIC'])
+    .optional()
+    .default('ONCE_PER_FORM'),
+  duplicateRestrictionPeriod: z
+    .enum(['DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM_HOURS'])
+    .optional()
+    .default('DAILY'),
+  duplicateCustomHours: z
+    .union([z.number().int().min(1).max(8760), z.null(), z.literal('')])
+    .optional()
+    .transform((v) => (v === '' || v === null || v === undefined ? 24 : Number(v))),
+  // Controlled Response Editing
+  editingAuthMethod: z
+    .enum(['SECURE_EDIT_LINK', 'AUTH_USER', 'ADMIN_ONLY', 'BOTH_LINK_AND_AUTH'])
+    .optional()
+    .default('SECURE_EDIT_LINK'),
+  editingWindowMode: z
+    .enum(['ALWAYS', 'WITHIN_WINDOW', 'UNTIL_DEADLINE'])
+    .optional()
+    .default('ALWAYS'),
+  editingWindowMinutes: z
+    .union([z.number().int().min(1).max(525600), z.null(), z.literal('')])
+    .optional()
+    .transform((v) => (v === '' || v === null || v === undefined ? 1440 : Number(v))),
+  editingDeadline: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => (!v ? null : new Date(v).toISOString())),
 });
 
 export const createFormSchema = z.object({

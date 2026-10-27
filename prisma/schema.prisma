@@ -153,6 +153,17 @@ model FormSettings {
   quizIdentityQuestionId   String?
   quizExpectedParticipants Int?
   quizRosterMode           String?    @default("COUNT_ONLY") // "COUNT_ONLY" | "ROSTER"
+  // Duplicate Response Prevention
+  duplicateIdentifierMethod     String?    @default("AUTH_USER") // "AUTH_USER" | "VERIFIED_EMAIL" | "QUESTION_FIELD" | "IP_ADDRESS"
+  duplicateIdentifierQuestionId String?
+  duplicateRestrictionScope     String?    @default("ONCE_PER_FORM") // "ONCE_PER_FORM" | "PERIODIC"
+  duplicateRestrictionPeriod    String?    @default("DAILY") // "DAILY" | "WEEKLY" | "MONTHLY" | "CUSTOM_HOURS"
+  duplicateCustomHours          Int?       @default(24)
+  // Controlled Response Editing
+  editingAuthMethod            String?    @default("SECURE_EDIT_LINK") // "SECURE_EDIT_LINK" | "AUTH_USER" | "ADMIN_ONLY" | "BOTH_LINK_AND_AUTH"
+  editingWindowMode            String?    @default("ALWAYS") // "ALWAYS" | "WITHIN_WINDOW" | "UNTIL_DEADLINE"
+  editingWindowMinutes         Int?       @default(1440)
+  editingDeadline              DateTime?
   createdAt                DateTime   @default(now())
   updatedAt                DateTime   @updatedAt
 
@@ -256,6 +267,9 @@ model FormSubmission {
   maxScore         Float?
   isGradeReleased  Boolean   @default(false)
   gradeReleasedAt  DateTime?
+  editCount        Int       @default(0)
+  lastEditedAt     DateTime?
+  lastEditedBy     String?   // "RESPONDENT" | "ADMIN"
 
   form        Form               @relation(fields: [formId], references: [id], onDelete: Cascade)
   version     FormVersion?       @relation(fields: [formVersionId], references: [id], onDelete: SetNull)
@@ -268,6 +282,9 @@ model FormSubmission {
   @@index([formId, submittedAt])
   @@index([respondentUserId])
   @@index([editToken])
+  @@index([formId, respondentUserId, submittedAt])
+  @@index([formId, respondentEmail, submittedAt])
+  @@index([formId, ipHash, submittedAt])
   @@map("form_submissions")
 }
 

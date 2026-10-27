@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import confetti from 'canvas-confetti';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,7 +63,9 @@ function isDarkColor(hexColor?: string): boolean {
 
 function PublicFormContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const publicId = params.publicId as string;
+  const editTokenParam = searchParams ? searchParams.get('editToken') : null;
   const { user } = useAuth();
 
   const [formData, setFormData] = useState<any>(null);
@@ -75,6 +77,22 @@ function PublicFormContent() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
   const [respondentEmail, setRespondentEmail] = useState('');
+
+  // Controlled Response Editing & Duplicate Prevention state
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [activeEditToken, setActiveEditToken] = useState<string | null>(null);
+  const [editSubmissionInfo, setEditSubmissionInfo] = useState<{
+    submittedAt?: string;
+    lastEditedAt?: string | null;
+    editCount?: number;
+    canEdit?: boolean;
+    policy?: any;
+  } | null>(null);
+  const [duplicateBlockedInfo, setDuplicateBlockedInfo] = useState<{
+    message: string;
+    canEdit: boolean;
+    editToken?: string;
+  } | null>(null);
 
   // Ensure body background is #004B6E
   useEffect(() => {
@@ -95,6 +113,57 @@ function PublicFormContent() {
       }
     }
   }, [user]);
+
+  // Initial public form fetch
+  useEffect(() => {
+    if (publicId) {
+      fetchPublicForm();
+    }
+  }, [publicId]);
+
+  // Load existing submission if editToken parameter is present
+  useEffect(() => {
+    if (!publicId || !editTokenParam) return;
+
+    const loadSubmissionForEdit = async () => {
+      try {
+        const res = await fetch(
+          `/api/public/forms/${publicId}/submissions/edit?editToken=${encodeURIComponent(editTokenParam)}`,
+          { cache: 'no-store' }
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          setValidationError(data.error || 'Failed to load submission for editing.');
+          return;
+        }
+
+        if (data.submission) {
+          setIsEditMode(true);
+          setActiveEditToken(editTokenParam);
+          setEditSubmissionInfo({
+            submittedAt: data.submission.submittedAt,
+            lastEditedAt: data.submission.lastEditedAt,
+            editCount: data.submission.editCount || 0,
+            canEdit: true,
+          });
+
+          if (data.submission.answers) {
+            setAnswers(data.submission.answers);
+          }
+          if (data.submission.cattleOwners && Array.isArray(data.submission.cattleOwners) && data.submission.cattleOwners.length > 0) {
+            setCattleOwners(data.submission.cattleOwners);
+          }
+          if (data.submission.respondentEmail) {
+            setRespondentEmail(data.submission.respondentEmail);
+          }
+        }
+      } catch {
+        setValidationError('Failed to load existing submission for editing. Please check your network.');
+      }
+    };
+
+    loadSubmissionForEdit();
+  }, [publicId, editTokenParam]);
 
   // Respondent answers: { [questionId: string]: any }
   const [answers, setAnswers] = useState<Record<string, any>>({});
@@ -1157,6 +1226,45 @@ function PublicFormContent() {
         }))
       : undefined;
 
+    // Controlled Response Editing: Submit in-place update if in edit mode
+    if (isEditMode && activeEditToken) {
+      try {
+        const res = await fetch(`/api/public/forms/${publicId}/submissions/edit`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            editToken: activeEditToken,
+            answers: formattedAnswers,
+            cattleOwners: payloadCattleOwners,
+            respondentEmail: respondentEmail.trim() || undefined,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          setValidationError(data.error || 'Failed to update response');
+        } else {
+          setIsSubmitted(true);
+          setSubmissionResult({
+            ...data,
+            editToken: activeEditToken,
+            message: 'Your response has been updated successfully.',
+          });
+          confetti({
+            particleCount: 80,
+            spread: 70,
+            origin: { y: 0.6 },
+          });
+        }
+      } catch {
+        setValidationError('Failed to update response. Please try again.');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // Standard Submission
     try {
       const res = await fetch(`/api/public/forms/${publicId}/submissions`, {
         method: 'POST',
@@ -1171,7 +1279,16 @@ function PublicFormContent() {
 
       const data = await res.json();
       if (!res.ok) {
-        setValidationError(data.error || 'Failed to submit response');
+        if (res.status === 409 && data.isDuplicate) {
+          setDuplicateBlockedInfo({
+            message: data.error || 'You have already submitted a response to this form.',
+            canEdit: Boolean(data.canEdit),
+            editToken: data.editToken,
+          });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          setValidationError(data.error || 'Failed to submit response');
+        }
       } else {
         setIsSubmitted(true);
         setSubmissionResult(data);
@@ -1353,6 +1470,41 @@ function PublicFormContent() {
             </div>
           )}
 
+          {/* Controlled Response Editing Button */}
+          {submissionResult?.editToken && formData?.settings?.allowResponseEditing && (
+            <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-2">
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    window.location.href = `/f/${publicId}?editToken=${submissionResult.editToken}`;
+                  }}
+                  className="text-xs font-bold border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950 cursor-pointer"
+                >
+                  <FileText className="h-3.5 w-3.5 mr-1.5" /> Edit your response (પ્રતિભાવ સુધારો)
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    const editUrl = `${window.location.origin}/f/${publicId}?editToken=${submissionResult.editToken}`;
+                    navigator.clipboard.writeText(editUrl);
+                    alert('Secure edit link copied to clipboard!');
+                  }}
+                  className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 cursor-pointer"
+                >
+                  Copy Edit Link
+                </Button>
+              </div>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                You can use this link to update your answers within the allowed editing window.
+              </p>
+            </div>
+          )}
+
           {/* Link to submit another response if not restricted */}
           {!settings?.restrictOneResponse && (
             <Button
@@ -1365,6 +1517,8 @@ function PublicFormContent() {
                   setRespondentEmail('');
                 }
                 setIsSubmitted(false);
+                setIsEditMode(false);
+                setActiveEditToken(null);
                 setCurrentSectionIndex(0);
                 setSectionHistory([0]);
               }}
@@ -1473,6 +1627,92 @@ function PublicFormContent() {
             onOverallTimeout={handleOverallTimeout}
             onQuestionTimeout={handleQuestionTimeout}
           />
+        )}
+
+        {/* Duplicate Submission Restricted Alert Banner */}
+        {duplicateBlockedInfo && (
+          <div className="bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700/70 rounded-2xl p-5 shadow-lg space-y-3 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-start gap-3.5">
+              <div className="h-10 w-10 rounded-xl bg-amber-100 dark:bg-amber-900/50 border border-amber-300 dark:border-amber-700/60 flex items-center justify-center shrink-0 text-amber-700 dark:text-amber-300 shadow-sm">
+                <AlertCircle className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-amber-900 dark:text-amber-100">
+                  Duplicate Submission Restricted (પુનરાવર્તિત સબમિશન પ્રતિબંધિત)
+                </h3>
+                <p className="text-xs text-amber-800 dark:text-amber-200 mt-1 leading-relaxed">
+                  {duplicateBlockedInfo.message}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setDuplicateBlockedInfo(null)}
+                className="h-7 w-7 p-0 text-amber-700 hover:text-amber-900 dark:text-amber-300 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            {duplicateBlockedInfo.canEdit && duplicateBlockedInfo.editToken && (
+              <div className="pt-2 border-t border-amber-200/60 dark:border-amber-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <span className="text-xs text-amber-800 dark:text-amber-300 font-medium">
+                  Would you like to review or update your previously submitted answers?
+                </span>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = `/f/${publicId}?editToken=${duplicateBlockedInfo.editToken}`;
+                  }}
+                  className="h-8 px-3.5 rounded-lg text-xs font-bold bg-amber-700 hover:bg-amber-800 text-white shadow-sm flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Edit Existing Response
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Active Response Editing Mode Banner */}
+        {isEditMode && (
+          <div className="bg-sky-50 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-700/70 rounded-2xl p-4 shadow-md space-y-2 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-lg bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 flex items-center justify-center font-bold">
+                  <FileText className="h-4 w-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-sky-950 dark:text-sky-100 uppercase tracking-wider">
+                    Editing Previously Submitted Response (પ્રતિભાવ સંપાદન મોડ)
+                  </h4>
+                  <p className="text-[11px] text-sky-700 dark:text-sky-300 font-medium">
+                    {editSubmissionInfo?.submittedAt
+                      ? `Original submission: ${new Date(editSubmissionInfo.submittedAt).toLocaleString()}`
+                      : 'Your changes will update your original response in-place.'}
+                    {typeof editSubmissionInfo?.editCount === 'number' && editSubmissionInfo.editCount > 0 && (
+                      <span className="ml-2 px-1.5 py-0.5 rounded bg-sky-200/70 dark:bg-sky-900 text-sky-900 dark:text-sky-200 text-[10px] font-semibold">
+                        Edited {editSubmissionInfo.editCount} time{editSubmissionInfo.editCount === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsEditMode(false);
+                  setActiveEditToken(null);
+                  window.location.href = `/f/${publicId}`;
+                }}
+                className="h-7 px-2.5 text-[11px] font-semibold rounded-lg border-sky-300 dark:border-sky-700 text-sky-800 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-900/40 cursor-pointer"
+              >
+                Exit Edit Mode
+              </Button>
+            </div>
+          </div>
         )}
 
         {/* Form Title & Banner Card */}
@@ -2970,11 +3210,16 @@ function PublicFormContent() {
               >
                 {isSubmitting ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Submitting...
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" /> {isEditMode ? 'Updating Response...' : 'Submitting...'}
                   </>
                 ) : (
                   <>
-                    <Check className="h-4 w-4" /> {formData?.title?.includes('Cattle') || formData?.title?.includes('સર્વે') ? 'Submit Survey (સર્વે સબમિટ કરો)' : 'Submit'}
+                    <Check className="h-4 w-4" />{' '}
+                    {isEditMode
+                      ? 'Update Response (પ્રતિભાવ અપડેટ કરો)'
+                      : formData?.title?.includes('Cattle') || formData?.title?.includes('સર્વે')
+                        ? 'Submit Survey (સર્વે સબમિટ કરો)'
+                        : 'Submit'}
                   </>
                 )}
               </Button>
