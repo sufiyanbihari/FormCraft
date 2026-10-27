@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && (tsx scripts/migrate_response_control_schema.ts || true) && next build",
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint",

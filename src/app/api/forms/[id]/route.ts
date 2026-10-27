@@ -105,6 +105,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    await ensureQuizSchema();
+
     const { id } = await params;
     const role = await getUserFormRole(id, user.id);
 

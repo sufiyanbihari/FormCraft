@@ -93,11 +93,14 @@ const MIGRATION_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS "quiz_attempts_formId_startedAt_idx" ON "quiz_attempts"("formId", "startedAt")`,
 ];
 
+import { ensureResponseControlSchema } from './ensureResponseControlSchema';
+
 /**
  * Automatically ensures that all additive columns required by the Prisma schema
  * exist in the database. Runs idempotently and caches success in memory.
  */
 export async function ensureQuizSchema(): Promise<void> {
+  await ensureResponseControlSchema();
   if (quizSchemaEnsured) return;
 
   if (ensuringPromise) {

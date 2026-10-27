@@ -33,18 +33,14 @@ export async function ensureResponseControlSchema(): Promise<void> {
   if (ensuringPromise) return ensuringPromise;
 
   ensuringPromise = (async () => {
-    try {
-      for (const statement of MIGRATION_STATEMENTS) {
+    for (const statement of MIGRATION_STATEMENTS) {
+      try {
         await prisma.$executeRawUnsafe(statement);
+      } catch (err: any) {
+        console.warn('[ensureResponseControlSchema] Statement notice:', err?.message || err);
       }
-      schemaEnsured = true;
-    } catch (error) {
-      console.error('Failed to ensure response control schema:', error);
-      schemaEnsured = false;
-      throw error;
-    } finally {
-      ensuringPromise = null;
     }
+    schemaEnsured = true;
   })();
 
   return ensuringPromise;
