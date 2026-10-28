@@ -134,9 +134,17 @@ export async function POST(
       const existingTiming = timingMap[targetQuestionId];
       targetQuestionStartedAt = new Date(existingTiming.startedAt);
       targetQuestionDeadline = existingTiming.deadline ? new Date(existingTiming.deadline) : null;
+    } else {
       // First visit to target question
-      const defaultQTimer = (settings?.quizTimerMode === 'QUESTION' || settings?.quizTimerMode === 'BOTH') && settings?.quizQuestionTimeLimitSeconds ? settings.quizQuestionTimeLimitSeconds : 0;
-      const effectiveTargetQTimer = (targetQ.timeLimitSeconds && targetQ.timeLimitSeconds > 0) ? targetQ.timeLimitSeconds : defaultQTimer;
+      const defaultQTimer =
+        (form.settings?.quizTimerMode === 'QUESTION' || form.settings?.quizTimerMode === 'BOTH') &&
+        form.settings?.quizQuestionTimeLimitSeconds
+          ? form.settings.quizQuestionTimeLimitSeconds
+          : 0;
+      const effectiveTargetQTimer =
+        targetQ.timeLimitSeconds && targetQ.timeLimitSeconds > 0
+          ? targetQ.timeLimitSeconds
+          : defaultQTimer;
 
       if (effectiveTargetQTimer > 0) {
         targetQuestionDeadline = new Date(now.getTime() + effectiveTargetQTimer * 1000);
