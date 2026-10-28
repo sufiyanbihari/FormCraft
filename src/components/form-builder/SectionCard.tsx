@@ -50,11 +50,14 @@ export default function SectionCard({
 
         {totalSections > 1 && (
           <button
+            type="button"
             onClick={onDelete}
-            className="text-gray-400 hover:text-red-500 p-1.5 rounded-md hover:bg-white dark:hover:bg-gray-800 transition-colors"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-950/60 hover:bg-red-200 dark:hover:bg-red-900/80 border border-red-300 dark:border-red-800 rounded-lg shadow-2xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900 cursor-pointer"
             title="Delete section"
+            aria-label={`Delete section ${sectionIndex + 1}`}
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-3.5 w-3.5 text-red-600 dark:text-red-400 shrink-0" />
+            <span>Delete Section</span>
           </button>
         )}
       </div>

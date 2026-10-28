@@ -1347,7 +1347,7 @@ function PublicFormContent() {
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
               {submissionResult?.message ||
-                settings?.confirmationMessage ||
+                formData?.settings?.confirmationMessage ||
                 'Your response has been recorded.'}
             </p>
           </div>
@@ -1368,21 +1368,47 @@ function PublicFormContent() {
           {/* Quiz Score Box & Details */}
           {submissionResult?.score && (
             <div className="space-y-4">
-              <div className="p-4 bg-purple-50 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800 text-center">
-                <div className="flex items-center justify-center gap-1.5 text-purple-700 dark:text-purple-300 text-xs font-semibold mb-1">
-                  <Award className="h-4 w-4" />
-                  <span>Quiz Score</span>
-                </div>
-                <p className="text-3xl font-black text-purple-900 dark:text-purple-100">
-                  {submissionResult.score.total}{' '}
-                  <span className="text-lg font-semibold text-gray-400">
-                    / {submissionResult.score.max} pts ({submissionResult.score.percentage ?? 0}%)
-                  </span>
-                </p>
+              {/* Only show points summary when quizShowPointsEarned is enabled */}
+              {submissionResult.score.showPoints !== false && formData?.settings?.quizShowPointsEarned !== false && (
+                <div className="p-4 bg-purple-50 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800 text-center">
+                  <div className="flex items-center justify-center gap-1.5 text-purple-700 dark:text-purple-300 text-xs font-semibold mb-1">
+                    <Award className="h-4 w-4" />
+                    <span>Quiz Score</span>
+                  </div>
+                  <p className="text-3xl font-black text-purple-900 dark:text-purple-100">
+                    {submissionResult.score.total}{' '}
+                    <span className="text-lg font-semibold text-gray-400">
+                      / {submissionResult.score.max} pts ({submissionResult.score.percentage ?? 0}%)
+                    </span>
+                  </p>
 
-                {/* Pass/Fail Status Banner */}
-                {submissionResult.score.isPassed !== null && submissionResult.score.isPassed !== undefined && (
-                  <div className="mt-2.5 pt-2.5 border-t border-purple-200/60 dark:border-purple-800/60">
+                  {/* Pass/Fail Status Banner */}
+                  {submissionResult.score.isPassed !== null && submissionResult.score.isPassed !== undefined && (
+                    <div className="mt-2.5 pt-2.5 border-t border-purple-200/60 dark:border-purple-800/60">
+                      <span
+                        className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
+                          submissionResult.score.isPassed
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                            : 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+                        }`}
+                      >
+                        {submissionResult.score.isPassed ? 'PASSED' : 'NOT PASSED'}
+                      </span>
+                      {submissionResult.score.customMessage && (
+                        <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 font-medium">
+                          {submissionResult.score.customMessage}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* When points are hidden but Pass/Fail status is configured, show only Pass/Fail status */}
+              {(submissionResult.score.showPoints === false || formData?.settings?.quizShowPointsEarned === false) &&
+                submissionResult.score.isPassed !== null &&
+                submissionResult.score.isPassed !== undefined && (
+                  <div className="p-4 bg-purple-50 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800 text-center">
                     <span
                       className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
                         submissionResult.score.isPassed
@@ -1398,79 +1424,6 @@ function PublicFormContent() {
                       </p>
                     )}
                   </div>
-                )}
-              </div>
-
-              {/* Question-level Review Breakdown */}
-              {submissionResult.score.breakdown && submissionResult.score.breakdown.length > 0 && (
-                <div className="text-left space-y-3 pt-2">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Question Review
-                  </h4>
-                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                    {submissionResult.score.breakdown.map((item: any, iIdx: number) => (
-                      <div
-                        key={iIdx}
-                        className={`p-3 rounded-xl border text-xs space-y-1.5 ${
-                          item.isCorrect
-                            ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60'
-                            : 'bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800/60'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-gray-800 dark:text-gray-200">
-                            {item.questionTitle || `Question ${iIdx + 1}`}
-                          </span>
-                          {item.score !== undefined && (
-                            <span
-                              className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${
-                                item.isCorrect
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-red-100 text-red-800'
-                              }`}
-                            >
-                              {item.score} / {item.maxPoints} pts
-                            </span>
-                          )}
-                        </div>
-
-                        <div>
-                          <span className="text-gray-400">Your answer: </span>
-                          <span className="font-medium text-gray-700 dark:text-gray-300">
-                            {Array.isArray(item.submittedValue)
-                              ? item.submittedValue.join(', ')
-                              : String(item.submittedValue ?? 'None')}
-                          </span>
-                        </div>
-
-                        {item.correctAnswer !== undefined && !item.isCorrect && (
-                          <div className="text-emerald-700 dark:text-emerald-300">
-                            <span className="font-semibold">Correct answer: </span>
-                            <span>
-                              {Array.isArray(item.correctAnswer)
-                                ? item.correctAnswer.join(', ')
-                                : typeof item.correctAnswer === 'object' && item.correctAnswer !== null
-                                  ? JSON.stringify(item.correctAnswer)
-                                  : String(item.correctAnswer)}
-                            </span>
-                          </div>
-                        )}
-
-                        {item.feedback && (
-                          <p className="text-[11px] text-gray-600 dark:text-gray-400 italic bg-white/70 dark:bg-gray-900/60 p-1.5 rounded">
-                            💬 Feedback: {item.feedback}
-                          </p>
-                        )}
-
-                        {item.explanation && (
-                          <p className="text-[11px] text-purple-700 dark:text-purple-300 bg-purple-50/70 dark:bg-purple-950/30 p-1.5 rounded">
-                            💡 Explanation: {item.explanation}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
               )}
             </div>
           )}
@@ -1510,8 +1463,8 @@ function PublicFormContent() {
             </div>
           )}
 
-          {/* Link to submit another response if not restricted */}
-          {!settings?.restrictOneResponse && (
+          {/* Link to submit another response if duplicate prevention is not active */}
+          {!formData?.settings?.restrictOneResponse && (
             <Button
               variant="outline"
               size="sm"
@@ -1659,7 +1612,7 @@ function PublicFormContent() {
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            {duplicateBlockedInfo.canEdit && duplicateBlockedInfo.editToken && (
+            {Boolean(formData?.settings?.allowResponseEditing) && duplicateBlockedInfo.canEdit && duplicateBlockedInfo.editToken && (
               <div className="pt-2 border-t border-amber-200/60 dark:border-amber-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <span className="text-xs text-amber-800 dark:text-amber-300 font-medium">
                   Would you like to review or update your previously submitted answers?
@@ -3185,13 +3138,14 @@ function PublicFormContent() {
             {!isCattleSurvey && sectionHistory.length > 1 && formData?.settings?.quizNavigationPolicy !== 'FORWARD_ONLY' && (
               <Button
                 type="button"
-                variant="outline"
                 onClick={handleBack}
-                className={`text-xs sm:text-sm font-bold h-11 px-4 sm:px-5 rounded-xl transition-all hover:scale-[1.02] ${
+                disabled={isSubmitting || sectionHistory.length <= 1}
+                className={`text-xs sm:text-sm font-bold h-11 px-4 sm:px-5 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] focus:outline-none focus-visible:ring-2 disabled:opacity-50 disabled:pointer-events-none disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5 shadow-sm ${
                   isDarkBg
-                    ? 'bg-white text-gray-800 hover:bg-sky-50 border border-white/40 shadow-md'
-                    : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300 shadow-sm'
+                    ? 'bg-white/15 hover:bg-white/25 active:bg-white/20 text-white border border-white/30 hover:border-white/50 backdrop-blur-md focus-visible:ring-white/60'
+                    : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-700 focus-visible:ring-purple-500'
                 }`}
+                title="Go back to previous section"
               >
                 <ArrowLeft className="h-4 w-4 mr-1.5" /> Back
               </Button>

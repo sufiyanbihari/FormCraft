@@ -47,6 +47,15 @@ export async function POST(
       options,
     } = result.data;
 
+    const form = await prisma.form.findUnique({
+      where: { id },
+      include: { settings: true },
+    });
+
+    if (!form) {
+      return NextResponse.json({ error: 'Form not found' }, { status: 404 });
+    }
+
     // Determine next orderIndex within the section
     const lastQ = await prisma.formQuestion.findFirst({
       where: { sectionId },
@@ -55,6 +64,11 @@ export async function POST(
     });
 
     const nextOrder = (lastQ?.orderIndex ?? -1) + 1;
+
+    // Default points per question based on form.settings.quizDefaultPoints if quiz
+    const isPresentationType = type === 'SECTION_HEADER' || type === 'TEXT_BLOCK' || type === 'IMAGE_BLOCK' || type === 'VIDEO_EMBED';
+    const defaultPoints = (form.isQuiz && !isPresentationType) ? (form.settings?.quizDefaultPoints ?? 1) : 0;
+    const finalQuizPoints = quizPoints !== undefined ? quizPoints : defaultPoints;
 
     const question = await prisma.$transaction(async (tx) => {
       const created = await tx.formQuestion.create({
@@ -68,7 +82,7 @@ export async function POST(
           orderIndex: nextOrder,
           validation: validation || {},
           config: config || {},
-          quizPoints: quizPoints || 0,
+          quizPoints: finalQuizPoints,
           quizAnswer: quizAnswer || {},
           quizExplanation: quizExplanation || '',
           timeLimitSeconds: timeLimitSeconds || 0,

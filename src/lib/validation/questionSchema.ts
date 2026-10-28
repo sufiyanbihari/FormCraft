@@ -86,7 +86,7 @@ export const createQuestionSchema = z.object({
     ratingMax: 5,
     ratingIcon: 'STAR',
   }),
-  quizPoints: z.number().int().min(0).default(0),
+  quizPoints: z.number().int().min(0).optional(),
   quizAnswer: z.any().optional().default({}),
   quizExplanation: z.string().nullable().optional().default(''),
   timeLimitSeconds: z.number().int().min(0).optional().default(0),

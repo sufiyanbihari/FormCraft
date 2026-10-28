@@ -581,9 +581,9 @@ export async function POST(
         });
 
         quizResult = {
-          total: totalScore,
-          max: maxScore,
-          percentage,
+          total: showPoints ? totalScore : undefined,
+          max: showPoints ? maxScore : undefined,
+          percentage: showPoints ? percentage : undefined,
           isPassed,
           customMessage,
           showPoints,
@@ -599,7 +599,7 @@ export async function POST(
         ? settings?.confirmationMessage || 'Your response has been recorded.'
         : 'Your response has been recorded. Grades will be released after manual review.',
       submissionId: submission.id,
-      editToken: submission.editToken,
+      editToken: settings?.allowResponseEditing ? submission.editToken : undefined,
       isGradeReleased: form.isQuiz ? isGradeReleased : true,
       score: quizResult,
     });

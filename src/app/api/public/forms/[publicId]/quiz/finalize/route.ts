@@ -96,9 +96,9 @@ export async function POST(
       });
 
       scoreResult = {
-        total: finalized.earnedScore,
-        max: finalized.maxScore,
-        percentage: finalized.percentage,
+        total: showPoints ? finalized.earnedScore : undefined,
+        max: showPoints ? finalized.maxScore : undefined,
+        percentage: showPoints ? finalized.percentage : undefined,
         durationSeconds: finalized.durationSeconds,
         isPassed,
         customMessage,

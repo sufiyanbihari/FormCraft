@@ -2146,7 +2146,7 @@ export default function QuestionCard({
                   <Input
                     type="number"
                     min="0"
-                    value={question.quizPoints || 0}
+                    value={question.quizPoints ?? 0}
                     onChange={(e) => onChange({ quizPoints: parseInt(e.target.value, 10) || 0 })}
                     className="w-16 h-7 text-xs font-bold text-center"
                   />
@@ -2445,7 +2445,7 @@ export default function QuestionCard({
                 className="text-xs text-purple-600 hover:text-purple-700 h-8"
               >
                 <Award className="h-3.5 w-3.5 mr-1.5" />
-                Answer key ({question.quizPoints || 0} pts)
+                Answer key ({question.quizPoints ?? 0} pts)
               </Button>
               {question.timeLimitSeconds && question.timeLimitSeconds > 0 ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-md">

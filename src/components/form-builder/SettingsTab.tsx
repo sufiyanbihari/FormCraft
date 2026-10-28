@@ -266,42 +266,6 @@ export default function SettingsTab({
               </div>
             </div>
 
-            {/* Participant Identity Configuration */}
-            <div className="space-y-3 pt-3 border-t border-gray-100 dark:border-gray-800">
-              <div>
-                <label className="font-bold text-gray-800 dark:text-gray-200 block">
-                  Participant Identity Field
-                </label>
-                <p className="text-gray-500 text-[11px] mt-0.5">
-                  Select a form question used to uniquely identify each participant (e.g. Employee ID, Student ID, Email, Registration Number)
-                </p>
-              </div>
-
-              <div className="max-w-md">
-                <Select
-                  value={settings?.quizIdentityQuestionId || 'NONE'}
-                  onValueChange={(val) =>
-                    onChangeSettings({ quizIdentityQuestionId: val === 'NONE' ? null : val })
-                  }
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select identity question..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NONE" className="text-xs">
-                      -- None (Use respondent email or anonymous identity) --
-                    </SelectItem>
-                    {questions
-                      .filter((q) => q.type !== 'SECTION_HEADER' && q.type !== 'TEXT_BLOCK' && q.type !== 'IMAGE_BLOCK' && q.type !== 'VIDEO_EMBED')
-                      .map((q) => (
-                        <SelectItem key={q.id} value={q.id} className="text-xs">
-                          {q.title || 'Untitled Question'} ({q.type.replace('_', ' ')})
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
 
             {/* Expected Participants & Authorized Roster */}
             <div className="space-y-3 pt-3 border-t border-gray-100 dark:border-gray-800">
@@ -590,44 +554,12 @@ export default function SettingsTab({
                       <SelectItem value="VERIFIED_EMAIL">
                         Email Address (Requires email collection or login)
                       </SelectItem>
-                      <SelectItem value="QUESTION_FIELD">
-                        Specific Question (e.g. Employee ID, Student ID, Mobile)
-                      </SelectItem>
                       <SelectItem value="IP_ADDRESS">
                         Client Device / IP (Best-effort anonymous protection)
                       </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-
-                {/* Identity Question Field Selector */}
-                {settings?.duplicateIdentifierMethod === 'QUESTION_FIELD' && (
-                  <div>
-                    <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
-                      Identity Question
-                    </label>
-                    <Select
-                      value={settings?.duplicateIdentifierQuestionId || ''}
-                      onValueChange={(val) => onChangeSettings({ duplicateIdentifierQuestionId: val })}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue placeholder="Select the identity question..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {questions
-                          .filter((q) => q.type !== 'SECTION_HEADER' && q.type !== 'TEXT_BLOCK')
-                          .map((q) => (
-                            <SelectItem key={q.id} value={q.id}>
-                              {q.title || 'Untitled Question'} ({q.type})
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-[10px] text-gray-500 mt-1">
-                      Submissions with matching responses to this field will be rejected as duplicates.
-                    </p>
-                  </div>
-                )}
               </div>
             )}
           </div>

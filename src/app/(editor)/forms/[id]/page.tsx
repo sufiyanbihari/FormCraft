@@ -406,6 +406,9 @@ function FormBuilderContent() {
     const sectionQuestions = questions.filter((q) => q.sectionId === targetSection.id);
     const orderIndex = sectionQuestions.length;
 
+    const isPresentationType = type === 'SECTION_HEADER' || type === 'TEXT_BLOCK' || type === 'IMAGE_BLOCK' || type === 'VIDEO_EMBED';
+    const defaultPoints = (isQuiz && !isPresentationType) ? (settings?.quizDefaultPoints ?? 1) : 0;
+
     try {
       const res = await fetch(`/api/forms/${formId}/questions`, {
         method: 'POST',
@@ -415,6 +418,7 @@ function FormBuilderContent() {
           title: 'Untitled Question',
           type,
           orderIndex,
+          quizPoints: defaultPoints,
           options:
             type === 'MULTIPLE_CHOICE' || type === 'CHECKBOXES' || type === 'DROPDOWN'
               ? [{ label: 'Option 1', value: 'Option 1', orderIndex: 0, isOther: false }]

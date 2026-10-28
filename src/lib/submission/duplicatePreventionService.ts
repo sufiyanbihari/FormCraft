@@ -85,55 +85,52 @@ export function resolveParticipantIdentifier({
   }
 
   if (method === 'QUESTION_FIELD') {
-    const qId = settings?.duplicateIdentifierQuestionId;
-    if (!qId) {
-      // If question ID is not configured, fall back to email or auth user
-      if (authenticatedUser?.id) {
+    const qId = settings?.duplicateIdentifierQuestionId || settings?.quizIdentityQuestionId;
+    if (qId) {
+      const targetAnswer = answers.find((a) => a.questionId === qId);
+      const rawVal = targetAnswer?.value;
+      if (rawVal !== undefined && rawVal !== null && (typeof rawVal !== 'string' || rawVal.trim())) {
+        const stringVal = typeof rawVal === 'string' ? rawVal.trim().toLowerCase() : String(rawVal).trim().toLowerCase();
         return {
           success: true,
           identity: {
-            method: 'AUTH_USER',
-            identifier: authenticatedUser.id,
-            label: authenticatedUser.email || authenticatedUser.id,
+            method: 'QUESTION_FIELD',
+            identifier: stringVal,
+            questionId: qId,
+            label: stringVal,
           },
         };
       }
-      const email = respondentEmail?.trim().toLowerCase();
-      if (email) {
-        return {
-          success: true,
-          identity: {
-            method: 'VERIFIED_EMAIL',
-            identifier: email,
-            label: email,
-          },
-        };
-      }
-      return {
-        success: false,
-        error: 'Duplicate prevention is misconfigured: identity question is missing.',
-        statusCode: 400,
-      };
     }
 
-    const targetAnswer = answers.find((a) => a.questionId === qId);
-    const rawVal = targetAnswer?.value;
-    if (rawVal === undefined || rawVal === null || (typeof rawVal === 'string' && !rawVal.trim())) {
+    // If identity question is missing or unanswered, fall back gracefully to supported identity methods
+    if (authenticatedUser?.id) {
       return {
-        success: false,
-        error: 'The required identity field must be filled to submit this form.',
-        statusCode: 400,
+        success: true,
+        identity: {
+          method: 'AUTH_USER',
+          identifier: authenticatedUser.id,
+          label: authenticatedUser.email || authenticatedUser.name || authenticatedUser.id,
+        },
       };
     }
-
-    const stringVal = typeof rawVal === 'string' ? rawVal.trim().toLowerCase() : String(rawVal).trim().toLowerCase();
+    const email = respondentEmail?.trim().toLowerCase();
+    if (email) {
+      return {
+        success: true,
+        identity: {
+          method: 'VERIFIED_EMAIL',
+          identifier: email,
+          label: email,
+        },
+      };
+    }
     return {
       success: true,
       identity: {
-        method: 'QUESTION_FIELD',
-        identifier: stringVal,
-        questionId: qId,
-        label: stringVal,
+        method: 'IP_ADDRESS',
+        identifier: ipHash || 'anonymous-device',
+        label: 'Client Device',
       },
     };
   }
