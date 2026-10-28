@@ -1352,8 +1352,8 @@ function PublicFormContent() {
             </p>
           </div>
 
-          {/* Delayed Grade Release Message */}
-          {submissionResult?.isGradeReleased === false && (
+          {/* Delayed Grade Release Message (Quiz Only) */}
+          {Boolean(formData?.isQuiz) && submissionResult?.isGradeReleased === false && (
             <div className="p-4 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 text-center space-y-1">
               <div className="flex items-center justify-center gap-1.5 text-amber-700 dark:text-amber-400 text-xs font-bold">
                 <Clock className="h-4 w-4" />

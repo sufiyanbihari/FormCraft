@@ -136,9 +136,14 @@ export async function POST(
       return results;
     });
 
+    const totalCount = await prisma.quizParticipantRoster.count({
+      where: { formId },
+    });
+
     return NextResponse.json({
       message: `Successfully updated ${created.length} participant(s) in roster.`,
       count: created.length,
+      totalCount,
       participants: created,
     });
   } catch (error) {

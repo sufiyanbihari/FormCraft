@@ -134,15 +134,17 @@ export async function POST(
       const existingTiming = timingMap[targetQuestionId];
       targetQuestionStartedAt = new Date(existingTiming.startedAt);
       targetQuestionDeadline = existingTiming.deadline ? new Date(existingTiming.deadline) : null;
-    } else {
       // First visit to target question
-      if (targetQ.timeLimitSeconds && targetQ.timeLimitSeconds > 0) {
-        targetQuestionDeadline = new Date(now.getTime() + targetQ.timeLimitSeconds * 1000);
+      const defaultQTimer = (settings?.quizTimerMode === 'QUESTION' || settings?.quizTimerMode === 'BOTH') && settings?.quizQuestionTimeLimitSeconds ? settings.quizQuestionTimeLimitSeconds : 0;
+      const effectiveTargetQTimer = (targetQ.timeLimitSeconds && targetQ.timeLimitSeconds > 0) ? targetQ.timeLimitSeconds : defaultQTimer;
+
+      if (effectiveTargetQTimer > 0) {
+        targetQuestionDeadline = new Date(now.getTime() + effectiveTargetQTimer * 1000);
       }
       timingMap[targetQuestionId] = {
         startedAt: now.toISOString(),
         deadline: targetQuestionDeadline?.toISOString() || null,
-        timeLimitSeconds: targetQ.timeLimitSeconds || 0,
+        timeLimitSeconds: effectiveTargetQTimer,
       };
     }
 

@@ -39,7 +39,17 @@ export const finalizeQuizAttemptSchema = z.object({
 export const quizRosterItemSchema = z.object({
   participantId: z.string().trim().min(1, 'Participant ID is required').max(100),
   name: z.string().trim().max(100).optional().nullable(),
-  email: z.string().trim().email().optional().nullable().or(z.literal('')),
+  email: z
+    .string()
+    .trim()
+    .optional()
+    .nullable()
+    .transform((val) => {
+      if (!val || val.trim() === '') return null;
+      const trimmed = val.trim();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return emailRegex.test(trimmed) ? trimmed : null;
+    }),
 });
 
 export const batchQuizRosterSchema = z.object({

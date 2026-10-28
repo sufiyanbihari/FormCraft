@@ -2417,62 +2417,7 @@ export default function QuestionCard({
               </div>
             )}
 
-            {/* Feedback & Explanations */}
-            <div className="space-y-2 pt-2 border-t border-purple-200/60 dark:border-purple-800/60">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] text-gray-500 block mb-1">
-                    Correct Answer Feedback
-                  </label>
-                  <Input
-                    type="text"
-                    placeholder="Message shown when answer is correct..."
-                    value={question.quizAnswer?.correctFeedback || ''}
-                    onChange={(e) =>
-                      onChange({
-                        quizAnswer: {
-                          ...question.quizAnswer,
-                          correctFeedback: e.target.value,
-                        },
-                      })
-                    }
-                    className="h-8 text-xs bg-white dark:bg-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] text-gray-500 block mb-1">
-                    Incorrect Answer Feedback
-                  </label>
-                  <Input
-                    type="text"
-                    placeholder="Message shown when answer is incorrect..."
-                    value={question.quizAnswer?.incorrectFeedback || ''}
-                    onChange={(e) =>
-                      onChange({
-                        quizAnswer: {
-                          ...question.quizAnswer,
-                          incorrectFeedback: e.target.value,
-                        },
-                      })
-                    }
-                    className="h-8 text-xs bg-white dark:bg-gray-900"
-                  />
-                </div>
-              </div>
 
-              <div>
-                <label className="text-[11px] text-gray-500 block mb-1">
-                  General Solution / Explanation (shown after submission)
-                </label>
-                <Input
-                  type="text"
-                  placeholder="Explain why this answer is correct..."
-                  value={question.quizExplanation || ''}
-                  onChange={(e) => onChange({ quizExplanation: e.target.value })}
-                  className="h-8 text-xs bg-white dark:bg-gray-900"
-                />
-              </div>
-            </div>
 
             <div className="flex justify-end pt-1">
               <Button

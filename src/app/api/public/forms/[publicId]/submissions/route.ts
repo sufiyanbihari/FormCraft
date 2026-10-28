@@ -395,7 +395,7 @@ export async function POST(
 
     // Release grade determination
     const isImmediate = (form.settings?.quizReleaseGrade ?? 'IMMEDIATE') === 'IMMEDIATE';
-    const isGradeReleased = form.isQuiz ? isImmediate : false;
+    const isGradeReleased = form.isQuiz ? isImmediate : true;
     const gradeReleasedAt = isGradeReleased ? new Date() : null;
 
     // Persist submission transactionally
@@ -595,12 +595,12 @@ export async function POST(
     }
 
     return NextResponse.json({
-      message: isGradeReleased
+      message: (!form.isQuiz || isGradeReleased)
         ? settings?.confirmationMessage || 'Your response has been recorded.'
         : 'Your response has been recorded. Grades will be released after manual review.',
       submissionId: submission.id,
       editToken: submission.editToken,
-      isGradeReleased,
+      isGradeReleased: form.isQuiz ? isGradeReleased : true,
       score: quizResult,
     });
   } catch (error: any) {

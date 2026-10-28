@@ -55,6 +55,7 @@ function FormBuilderContent() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<'questions' | 'responses' | 'settings'>('questions');
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
@@ -383,8 +384,27 @@ function FormBuilderContent() {
 
   // Add Question
   const handleAddQuestion = async (type = 'MULTIPLE_CHOICE') => {
-    const targetSection = sections[0];
+    // Resolve target section:
+    // 1. If an active question is selected, add to that question's section
+    // 2. Else if activeSectionId is set, add to that section
+    // 3. Otherwise fallback to the last section (most recently added) or first section
+    let targetSection = null;
+    if (activeQuestionId) {
+      const activeQ = questions.find((q) => q.id === activeQuestionId);
+      if (activeQ) {
+        targetSection = sections.find((s) => s.id === activeQ.sectionId);
+      }
+    }
+    if (!targetSection && activeSectionId) {
+      targetSection = sections.find((s) => s.id === activeSectionId);
+    }
+    if (!targetSection) {
+      targetSection = sections[sections.length - 1] || sections[0];
+    }
     if (!targetSection) return;
+
+    const sectionQuestions = questions.filter((q) => q.sectionId === targetSection.id);
+    const orderIndex = sectionQuestions.length;
 
     try {
       const res = await fetch(`/api/forms/${formId}/questions`, {
@@ -394,6 +414,7 @@ function FormBuilderContent() {
           sectionId: targetSection.id,
           title: 'Untitled Question',
           type,
+          orderIndex,
           options:
             type === 'MULTIPLE_CHOICE' || type === 'CHECKBOXES' || type === 'DROPDOWN'
               ? [{ label: 'Option 1', value: 'Option 1', orderIndex: 0, isOther: false }]
@@ -407,6 +428,7 @@ function FormBuilderContent() {
         const updated = [...questions, newQ];
         setQuestions(updated);
         setActiveQuestionId(newQ.id);
+        setActiveSectionId(targetSection.id);
         updateHistory({
           title,
           description,
@@ -439,6 +461,8 @@ function FormBuilderContent() {
         const data = await res.json();
         const updatedSections = [...sections, data.section];
         setSections(updatedSections);
+        setActiveSectionId(data.section.id);
+        setActiveQuestionId(null);
         updateHistory({
           title,
           description,
@@ -810,7 +834,11 @@ function FormBuilderContent() {
                   const sectionQuestions = questions.filter((q) => q.sectionId === sec.id);
 
                   return (
-                    <div key={sec.id} className="space-y-4">
+                    <div
+                      key={sec.id}
+                      className="space-y-4"
+                      onClick={() => setActiveSectionId(sec.id)}
+                    >
                       {/* Section Card (only show if multiple sections or non-default) */}
                       {sections.length > 1 && (
                         <SectionCard
@@ -834,7 +862,10 @@ function FormBuilderContent() {
                             key={q.id}
                             question={q}
                             isActive={activeQuestionId === q.id}
-                            onSelect={() => setActiveQuestionId(q.id)}
+                            onSelect={() => {
+                              setActiveQuestionId(q.id);
+                              setActiveSectionId(sec.id);
+                            }}
                             onChange={(delta) => handleUpdateQuestion(q.id, delta)}
                             onDuplicate={() => handleDuplicateQuestion(q.id)}
                             onDelete={() => handleDeleteQuestion(q.id)}

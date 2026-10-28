@@ -136,8 +136,11 @@ export async function POST(
       }
 
       let currentQuestionDeadline: Date | null = null;
-      if (firstQuestion && firstQuestion.timeLimitSeconds && firstQuestion.timeLimitSeconds > 0) {
-        currentQuestionDeadline = new Date(startedAt.getTime() + firstQuestion.timeLimitSeconds * 1000);
+      const defaultQTimer = (settings?.quizTimerMode === 'QUESTION' || settings?.quizTimerMode === 'BOTH') && settings?.quizQuestionTimeLimitSeconds ? settings.quizQuestionTimeLimitSeconds : 0;
+      const effectiveFirstQTimer = (firstQuestion?.timeLimitSeconds && firstQuestion.timeLimitSeconds > 0) ? firstQuestion.timeLimitSeconds : defaultQTimer;
+
+      if (firstQuestion && effectiveFirstQTimer > 0) {
+        currentQuestionDeadline = new Date(startedAt.getTime() + effectiveFirstQTimer * 1000);
       }
 
       const initialQuestionTiming: Record<string, any> = {};
@@ -145,7 +148,7 @@ export async function POST(
         initialQuestionTiming[firstQuestion.id] = {
           startedAt: startedAt.toISOString(),
           deadline: currentQuestionDeadline?.toISOString() || null,
-          timeLimitSeconds: firstQuestion.timeLimitSeconds || 0,
+          timeLimitSeconds: effectiveFirstQTimer,
         };
       }
 

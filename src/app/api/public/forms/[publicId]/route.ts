@@ -89,9 +89,14 @@ export async function GET(
         isRequired: q.isRequired,
         orderIndex: q.orderIndex,
         validation: q.validation,
-        config: q.config,
         quizPoints: form.isQuiz ? q.quizPoints : 0,
-        timeLimitSeconds: form.isQuiz ? (q.timeLimitSeconds || 0) : 0,
+        timeLimitSeconds: form.isQuiz
+          ? (q.timeLimitSeconds && q.timeLimitSeconds > 0
+              ? q.timeLimitSeconds
+              : ((form.settings?.quizTimerMode === 'QUESTION' || form.settings?.quizTimerMode === 'BOTH') && form.settings?.quizQuestionTimeLimitSeconds
+                  ? form.settings.quizQuestionTimeLimitSeconds
+                  : 0))
+          : 0,
         options: q.options.map((opt) => ({
           id: opt.id,
           label: opt.label,

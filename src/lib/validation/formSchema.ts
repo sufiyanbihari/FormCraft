@@ -48,11 +48,12 @@ export const formSettingsSchema = z.object({
   quizDefaultPoints: z.number().int().min(0).optional().default(1),
   quizTimerMode: z.enum(['NONE', 'QUESTION', 'OVERALL', 'BOTH']).optional().default('NONE'),
   quizDurationMinutes: z.union([z.number().int().min(1).max(1440), z.null(), z.literal('')]).optional().transform((v) => (v === '' || v === null || v === undefined ? null : Number(v))),
+  quizQuestionTimeLimitSeconds: z.union([z.number().int().min(1).max(3600), z.null(), z.literal('')]).optional().transform((v) => (v === '' || v === null || v === undefined ? null : Number(v))),
   quizNavigationPolicy: z.enum(['BACKWARD_ENABLED', 'FORWARD_ONLY']).optional().default('BACKWARD_ENABLED'),
   quizTimeoutBehavior: z.enum(['AUTO_FINALIZE']).optional().default('AUTO_FINALIZE'),
   quizIdentityQuestionId: z.string().nullable().optional(),
   quizExpectedParticipants: z.union([z.number().int().min(1), z.null(), z.literal('')]).optional().transform((v) => (v === '' || v === null || v === undefined ? null : Number(v))),
-  quizRosterMode: z.enum(['COUNT_ONLY', 'ROSTER']).optional().default('COUNT_ONLY'),
+  quizRosterMode: z.enum(['COUNT_ONLY', 'ROSTER']).optional().default('ROSTER'),
   // Duplicate Response Prevention
   duplicateIdentifierMethod: z
     .enum(['AUTH_USER', 'VERIFIED_EMAIL', 'QUESTION_FIELD', 'IP_ADDRESS'])

@@ -45,6 +45,25 @@ export default function SettingsTab({
 }: SettingsTabProps) {
   const [isRosterModalOpen, setIsRosterModalOpen] = React.useState(false);
   const [rosterCount, setRosterCount] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (formId) {
+      fetch(`/api/forms/${formId}/quiz/roster`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.totalCount !== undefined) {
+            setRosterCount(data.totalCount);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [formId]);
+
+  React.useEffect(() => {
+    if (isQuiz && settings?.quizRosterMode !== 'ROSTER') {
+      onChangeSettings({ quizRosterMode: 'ROSTER' });
+    }
+  }, [isQuiz, settings?.quizRosterMode]);
   return (
     <div className="max-w-3xl mx-auto py-6 px-4 space-y-6">
       {/* 1. Quiz Settings */}
@@ -145,19 +164,6 @@ export default function SettingsTab({
                 <Switch
                   checked={settings?.quizShowCorrectAnswers ?? true}
                   onCheckedChange={(checked) => onChangeSettings({ quizShowCorrectAnswers: checked })}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-gray-800 dark:text-gray-200">Show feedback & explanations</p>
-                  <p className="text-gray-500 text-[11px]">
-                    Display question-level explanations and feedback for answers
-                  </p>
-                </div>
-                <Switch
-                  checked={settings?.quizShowFeedback ?? true}
-                  onCheckedChange={(checked) => onChangeSettings({ quizShowFeedback: checked })}
                 />
               </div>
             </div>
@@ -304,93 +310,35 @@ export default function SettingsTab({
                   Expected Participants & Access Authorization
                 </label>
                 <p className="text-gray-500 text-[11px] mt-0.5">
-                  Configure whether access is limited to an authorized participant roster or open with an expected count
+                  Enforce strict roster authorization. Only registered participant IDs will be allowed to access and submit this quiz.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div
-                  onClick={() => onChangeSettings({ quizRosterMode: 'COUNT_ONLY' })}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col gap-1 ${
-                    (settings?.quizRosterMode ?? 'COUNT_ONLY') === 'COUNT_ONLY'
-                      ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
-                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-gray-900 dark:text-gray-100">
-                      Method A: Expected Count
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-900 dark:text-gray-100 text-xs">
+                      Authorized Participant Roster (Method B)
+                    </p>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300">
+                      {rosterCount !== null ? `${rosterCount} Registered` : 'Roster Active'}
                     </span>
-                    {(settings?.quizRosterMode ?? 'COUNT_ONLY') === 'COUNT_ONLY' && (
-                      <span className="h-2 w-2 rounded-full bg-amber-500" />
-                    )}
                   </div>
                   <p className="text-[11px] text-gray-500">
-                    Estimate aggregate progress based on an expected count (e.g. 100 participants)
+                    {rosterCount !== null
+                      ? `${rosterCount} authorized participant(s) uploaded and verified`
+                      : 'Upload spreadsheets (.xlsx, .csv) or add participant IDs individually'}
                   </p>
                 </div>
-
-                <div
-                  onClick={() => onChangeSettings({ quizRosterMode: 'ROSTER' })}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col gap-1 ${
-                    settings?.quizRosterMode === 'ROSTER'
-                      ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
-                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300'
-                  }`}
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setIsRosterModalOpen(true)}
+                  className="h-8 text-xs bg-purple-600 hover:bg-purple-700 text-white shadow-xs shrink-0"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-gray-900 dark:text-gray-100">
-                      Method B: Authorized Roster
-                    </span>
-                    {settings?.quizRosterMode === 'ROSTER' && (
-                      <span className="h-2 w-2 rounded-full bg-amber-500" />
-                    )}
-                  </div>
-                  <p className="text-[11px] text-gray-500">
-                    Enforce strict roster authorization and monitor individual &apos;Not Started&apos; participants
-                  </p>
-                </div>
+                  <Users className="h-3.5 w-3.5 mr-1.5" /> Manage Roster
+                </Button>
               </div>
-
-              {(settings?.quizRosterMode ?? 'COUNT_ONLY') === 'COUNT_ONLY' ? (
-                <div className="pt-1 flex items-center gap-3">
-                  <label className="text-gray-700 dark:text-gray-300 font-medium whitespace-nowrap">
-                    Expected Participant Count:
-                  </label>
-                  <Input
-                    type="number"
-                    min="1"
-                    placeholder="e.g. 100"
-                    value={settings?.quizExpectedParticipants ?? ''}
-                    onChange={(e) =>
-                      onChangeSettings({
-                        quizExpectedParticipants: e.target.value ? parseInt(e.target.value, 10) : null,
-                      })
-                    }
-                    className="h-8 text-xs w-28"
-                  />
-                </div>
-              ) : (
-                <div className="pt-1 flex items-center justify-between p-3 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800">
-                  <div>
-                    <p className="font-semibold text-gray-900 dark:text-gray-100">
-                      Roster Management
-                    </p>
-                    <p className="text-[11px] text-gray-500">
-                      {rosterCount !== null ? `${rosterCount} authorized participants` : 'Manage allowed IDs and names'}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setIsRosterModalOpen(true)}
-                    className="h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-100"
-                  >
-                    <Users className="h-3.5 w-3.5 mr-1.5" /> Manage Roster
-                  </Button>
-                </div>
-              )}
             </div>
 
             {/* Quiz Timers Configuration */}
@@ -448,6 +396,30 @@ export default function SettingsTab({
                       className="h-8 text-xs w-28"
                     />
                     <span className="text-xs text-gray-500 font-medium">min</span>
+                  </div>
+                </div>
+              )}
+
+              {((settings?.quizTimerMode === 'QUESTION') || (settings?.quizTimerMode === 'BOTH')) && (
+                <div className="pt-2 flex items-center gap-3">
+                  <label className="text-gray-700 dark:text-gray-300 font-medium whitespace-nowrap">
+                    Per-Question Time Limit (Seconds):
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min="5"
+                      max="3600"
+                      placeholder="e.g. 60"
+                      value={settings?.quizQuestionTimeLimitSeconds ?? ''}
+                      onChange={(e) =>
+                        onChangeSettings({
+                          quizQuestionTimeLimitSeconds: e.target.value ? parseInt(e.target.value, 10) : null,
+                        })
+                      }
+                      className="h-8 text-xs w-28"
+                    />
+                    <span className="text-xs text-gray-500 font-medium">sec</span>
                   </div>
                 </div>
               )}
@@ -656,79 +628,6 @@ export default function SettingsTab({
                     </p>
                   </div>
                 )}
-
-                {/* Restriction Scope */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
-                      Restriction Scope
-                    </label>
-                    <Select
-                      value={settings?.duplicateRestrictionScope || 'ONCE_PER_FORM'}
-                      onValueChange={(val) => onChangeSettings({ duplicateRestrictionScope: val })}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue placeholder="Select restriction scope" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ONCE_PER_FORM">
-                          Once per form (Permanent)
-                        </SelectItem>
-                        <SelectItem value="PERIODIC">
-                          Time-based window (Periodic)
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {settings?.duplicateRestrictionScope === 'PERIODIC' && (
-                    <div>
-                      <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
-                        Restriction Frequency
-                      </label>
-                      <Select
-                        value={settings?.duplicateRestrictionPeriod || 'DAILY'}
-                        onValueChange={(val) => onChangeSettings({ duplicateRestrictionPeriod: val })}
-                      >
-                        <SelectTrigger className="h-9 text-xs">
-                          <SelectValue placeholder="Select period" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="DAILY">Once per calendar day (UTC)</SelectItem>
-                          <SelectItem value="WEEKLY">Once per calendar week</SelectItem>
-                          <SelectItem value="MONTHLY">Once per calendar month</SelectItem>
-                          <SelectItem value="CUSTOM_HOURS">Custom rolling duration</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                </div>
-
-                {settings?.duplicateRestrictionScope === 'PERIODIC' && settings?.duplicateRestrictionPeriod === 'CUSTOM_HOURS' && (
-                  <div>
-                    <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
-                      Custom Duration (Hours)
-                    </label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="8760"
-                      value={settings?.duplicateCustomHours ?? 24}
-                      onChange={(e) => onChangeSettings({ duplicateCustomHours: parseInt(e.target.value, 10) || 24 })}
-                      className="h-9 text-xs max-w-xs"
-                    />
-                    <p className="text-[10px] text-gray-500 mt-1">
-                      Respondents can submit again only after this duration has elapsed since their last submission.
-                    </p>
-                  </div>
-                )}
-
-                <div className="p-2.5 rounded-lg bg-white/70 dark:bg-gray-900/60 border border-purple-200/60 dark:border-purple-900/40 text-[11px] text-purple-900 dark:text-purple-300 flex items-start gap-2">
-                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-purple-600 mt-0.5" />
-                  <span>
-                    Concurrent submissions are serialized and verified atomically on the server. If response editing is enabled, blocked participants will be offered an option to edit their previous response.
-                  </span>
-                </div>
               </div>
             )}
           </div>
@@ -785,7 +684,7 @@ export default function SettingsTab({
                   </Select>
                 </div>
 
-                {/* Editing Window / Deadline Mode */}
+                {/* Editing Window & Restriction Scope Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div>
                     <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
@@ -810,62 +709,132 @@ export default function SettingsTab({
                         </SelectItem>
                       </SelectContent>
                     </Select>
+
+                    {settings?.editingWindowMode === 'WITHIN_WINDOW' && (
+                      <div className="mt-2">
+                        <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                          Time Allowed to Edit
+                        </label>
+                        <Select
+                          value={String(settings?.editingWindowMinutes ?? 1440)}
+                          onValueChange={(val) => onChangeSettings({ editingWindowMinutes: parseInt(val, 10) })}
+                        >
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue placeholder="Select duration" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="15">15 minutes</SelectItem>
+                            <SelectItem value="30">30 minutes</SelectItem>
+                            <SelectItem value="60">1 hour</SelectItem>
+                            <SelectItem value="120">2 hours</SelectItem>
+                            <SelectItem value="720">12 hours</SelectItem>
+                            <SelectItem value="1440">24 hours (1 day)</SelectItem>
+                            <SelectItem value="2880">48 hours (2 days)</SelectItem>
+                            <SelectItem value="10080">7 days (1 week)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {settings?.editingWindowMode === 'UNTIL_DEADLINE' && (
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-semibold text-gray-800 dark:text-gray-200">
+                            Editing Cutoff Date & Time
+                          </label>
+                          {settings?.editingDeadline && (
+                            <button
+                              type="button"
+                              onClick={() => onChangeSettings({ editingDeadline: null })}
+                              className="text-[11px] text-red-500 hover:underline"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                        <Input
+                          type="datetime-local"
+                          value={toLocalInputString(settings?.editingDeadline)}
+                          onChange={(e) =>
+                            onChangeSettings({
+                              editingDeadline: e.target.value ? new Date(e.target.value).toISOString() : null,
+                            })
+                          }
+                          className="h-9 text-xs"
+                        />
+                      </div>
+                    )}
                   </div>
 
-                  {settings?.editingWindowMode === 'WITHIN_WINDOW' && (
-                    <div>
-                      <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
-                        Time Allowed to Edit
-                      </label>
-                      <Select
-                        value={String(settings?.editingWindowMinutes ?? 1440)}
-                        onValueChange={(val) => onChangeSettings({ editingWindowMinutes: parseInt(val, 10) })}
-                      >
-                        <SelectTrigger className="h-9 text-xs">
-                          <SelectValue placeholder="Select duration" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="15">15 minutes</SelectItem>
-                          <SelectItem value="30">30 minutes</SelectItem>
-                          <SelectItem value="60">1 hour</SelectItem>
-                          <SelectItem value="120">2 hours</SelectItem>
-                          <SelectItem value="720">12 hours</SelectItem>
-                          <SelectItem value="1440">24 hours (1 day)</SelectItem>
-                          <SelectItem value="2880">48 hours (2 days)</SelectItem>
-                          <SelectItem value="10080">7 days (1 week)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
+                  <div>
+                    <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                      Restriction Scope
+                    </label>
+                    <Select
+                      value={settings?.duplicateRestrictionScope || 'ONCE_PER_FORM'}
+                      onValueChange={(val) => onChangeSettings({ duplicateRestrictionScope: val })}
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue placeholder="Select restriction scope" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ONCE_PER_FORM">
+                          Once per form (Permanent)
+                        </SelectItem>
+                        <SelectItem value="PERIODIC">
+                          Time-based window (Periodic)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
 
-                  {settings?.editingWindowMode === 'UNTIL_DEADLINE' && (
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="font-semibold text-gray-800 dark:text-gray-200">
-                          Editing Cutoff Date & Time
+                    {settings?.duplicateRestrictionScope === 'PERIODIC' && (
+                      <div className="mt-2">
+                        <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                          Restriction Frequency
                         </label>
-                        {settings?.editingDeadline && (
-                          <button
-                            type="button"
-                            onClick={() => onChangeSettings({ editingDeadline: null })}
-                            className="text-[11px] text-red-500 hover:underline"
-                          >
-                            Clear
-                          </button>
-                        )}
+                        <Select
+                          value={settings?.duplicateRestrictionPeriod || 'DAILY'}
+                          onValueChange={(val) => onChangeSettings({ duplicateRestrictionPeriod: val })}
+                        >
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue placeholder="Select period" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="DAILY">Once per calendar day (UTC)</SelectItem>
+                            <SelectItem value="WEEKLY">Once per calendar week</SelectItem>
+                            <SelectItem value="MONTHLY">Once per calendar month</SelectItem>
+                            <SelectItem value="CUSTOM_HOURS">Custom rolling duration</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <Input
-                        type="datetime-local"
-                        value={toLocalInputString(settings?.editingDeadline)}
-                        onChange={(e) =>
-                          onChangeSettings({
-                            editingDeadline: e.target.value ? new Date(e.target.value).toISOString() : null,
-                          })
-                        }
-                        className="h-9 text-xs"
-                      />
-                    </div>
-                  )}
+                    )}
+
+                    {settings?.duplicateRestrictionScope === 'PERIODIC' && settings?.duplicateRestrictionPeriod === 'CUSTOM_HOURS' && (
+                      <div className="mt-2">
+                        <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                          Custom Duration (Hours)
+                        </label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="8760"
+                          value={settings?.duplicateCustomHours ?? 24}
+                          onChange={(e) => onChangeSettings({ duplicateCustomHours: parseInt(e.target.value, 10) || 24 })}
+                          className="h-9 text-xs"
+                        />
+                        <p className="text-[10px] text-gray-500 mt-1">
+                          Respondents can submit again only after this duration has elapsed since their last submission.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-white/70 dark:bg-gray-900/60 border border-sky-200/60 dark:border-sky-900/40 text-[11px] text-sky-900 dark:text-sky-300 flex items-start gap-2">
+                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-sky-600 mt-0.5" />
+                  <span>
+                    Concurrent submissions are serialized and verified atomically on the server. If response editing is enabled, blocked participants will be offered an option to edit their previous response.
+                  </span>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-white/70 dark:bg-gray-900/60 border border-sky-200/60 dark:border-sky-900/40 text-[11px] text-sky-900 dark:text-sky-300 flex items-start gap-2">

@@ -148,6 +148,7 @@ model FormSettings {
   quizDefaultPoints        Int?       @default(1)
   quizTimerMode            String?    @default("NONE") // "NONE" | "QUESTION" | "OVERALL" | "BOTH"
   quizDurationMinutes      Int?
+  quizQuestionTimeLimitSeconds Int?
   quizNavigationPolicy     String?    @default("BACKWARD_ENABLED") // "BACKWARD_ENABLED" | "FORWARD_ONLY"
   quizTimeoutBehavior      String?    @default("AUTO_FINALIZE")
   quizIdentityQuestionId   String?

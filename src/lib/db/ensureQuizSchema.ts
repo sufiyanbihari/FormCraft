@@ -15,6 +15,7 @@ const MIGRATION_STATEMENTS = [
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "quizDefaultPoints" INTEGER DEFAULT 1`,
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "quizTimerMode" TEXT DEFAULT 'NONE'`,
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "quizDurationMinutes" INTEGER`,
+  `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "quizQuestionTimeLimitSeconds" INTEGER`,
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "quizNavigationPolicy" TEXT DEFAULT 'BACKWARD_ENABLED'`,
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "quizTimeoutBehavior" TEXT DEFAULT 'AUTO_FINALIZE'`,
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "quizIdentityQuestionId" TEXT`,
