@@ -153,19 +153,6 @@ export default function SettingsTab({
                   onCheckedChange={(checked) => onChangeSettings({ quizShowPointsEarned: checked })}
                 />
               </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-gray-800 dark:text-gray-200">Show correct answers</p>
-                  <p className="text-gray-500 text-[11px]">
-                    Identify correct answers after grades are released
-                  </p>
-                </div>
-                <Switch
-                  checked={settings?.quizShowCorrectAnswers ?? true}
-                  onCheckedChange={(checked) => onChangeSettings({ quizShowCorrectAnswers: checked })}
-                />
-              </div>
             </div>
 
             {/* Default Points & Passing Threshold */}

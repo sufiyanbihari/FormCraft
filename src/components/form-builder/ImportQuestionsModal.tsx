@@ -129,7 +129,7 @@ export default function ImportQuestionsModal({
   const defaultSec = activeSectionId || sections[0]?.id || '';
   const [destinationMode, setDestinationMode] = useState<'EXISTING' | 'NEW'>('EXISTING');
   const [selectedTargetSectionId, setSelectedTargetSectionId] = useState<string>(defaultSec);
-  const [newSectionTitle, setNewSectionTitle] = useState('Imported Questions');
+  const [newSectionTitle, setNewSectionTitle] = useState('Questions 1');
 
   // Importing action state
   const [isImporting, setIsImporting] = useState(false);
@@ -269,7 +269,7 @@ export default function ImportQuestionsModal({
         throw new Error(data.error || 'Failed to import questions');
       }
 
-      onImportSuccess(data.questions, data.newSection);
+      onImportSuccess(data.questions, data.newSections || data.newSection);
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Import failed';
@@ -454,10 +454,10 @@ export default function ImportQuestionsModal({
           count: data.count || questionsToImport.length,
           totalMarks,
           importedQuestions: data.questions,
-          newSection: data.newSection,
+          newSection: data.newSections || data.newSection,
         });
       } else {
-        onImportSuccess(data.questions, data.newSection);
+        onImportSuccess(data.questions, data.newSections || data.newSection);
         onClose();
       }
     } catch (err: unknown) {
@@ -1316,7 +1316,7 @@ export default function ImportQuestionsModal({
                 setDestinationMode('NEW');
                 setNewSectionTitle(e.target.value);
               }}
-              placeholder="Section name"
+              placeholder="Questions 1"
               disabled={destinationMode !== 'NEW'}
               className="h-7 text-xs w-36 bg-white dark:bg-gray-900"
             />

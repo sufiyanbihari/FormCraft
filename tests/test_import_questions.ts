@@ -229,16 +229,19 @@ async function runImportTests() {
     assert.strictEqual(res4.status, 200, 'Import into new section should succeed');
     const data4 = await res4.json();
     assert.strictEqual(data4.count, 2);
-    assert(data4.newSection, 'Should return newly created section');
-    assert.strictEqual(data4.newSection.title, 'Bonus Questions Section');
+    assert(data4.newSections && data4.newSections.length === 2, 'Should create 2 new sections for 2 imported questions');
+    assert.strictEqual(data4.newSections[0].title, 'Bonus Questions Section 1');
+    assert.strictEqual(data4.newSections[1].title, 'Bonus Questions Section 2');
 
     const importedQ2 = data4.questions[0];
     const importedQ3 = data4.questions[1];
-    assert.strictEqual(importedQ2.sectionId, data4.newSection.id);
-    assert.strictEqual(importedQ3.sectionId, data4.newSection.id);
+    assert.strictEqual(importedQ2.sectionId, data4.newSections[0].id);
+    assert.strictEqual(importedQ3.sectionId, data4.newSections[1].id);
+    assert.strictEqual(importedQ2.orderIndex, 0);
+    assert.strictEqual(importedQ3.orderIndex, 0);
     assert.strictEqual(importedQ2.type, 'CHECKBOXES');
     assert.deepStrictEqual((importedQ2.quizAnswer as any).correctValues, ['Milk', 'Cheese', 'Butter']);
-    console.log('  ✓ Multiple questions imported into dynamically created new section\n');
+    console.log('  ✓ Multiple questions imported into dynamically created new sections (one section per question)\n');
 
     // TEST 5: Verify original source questions remain completely untouched
     console.log('Test 5: Verify original questions independence');

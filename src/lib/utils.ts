@@ -130,3 +130,26 @@ export function isLikelyVideoSource(url?: string | null): boolean {
     trimmed.includes('vimeo.com')
   );
 }
+
+/**
+ * Generates sequential default titles for newly created sections during question import.
+ * Follows the project's naming pattern: "Questions 1", "question 2", "question 3", etc.
+ */
+export function generateImportSectionTitle(customBaseTitle: string | undefined | null, index: number): string {
+  const trimmed = (customBaseTitle || '').trim();
+
+  // If empty, standard placeholder, or variants of question/questions
+  if (
+    !trimmed ||
+    trimmed.toLowerCase() === 'imported questions' ||
+    /^questions?\s*\d*$/i.test(trimmed)
+  ) {
+    return index === 0 ? 'Questions 1' : `question ${index + 1}`;
+  }
+
+  // If user provided a custom title (e.g. "Biology" or "Unit 1")
+  const match = trimmed.match(/^(.*?)\s*\d+$/);
+  const base = match ? match[1].trim() : trimmed;
+  return `${base} ${index + 1}`;
+}
+

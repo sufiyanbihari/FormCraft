@@ -5,11 +5,12 @@ import { getUserFormRole, canEditForm } from '@/lib/auth/rbac';
 import { z } from 'zod';
 import { logActivity } from '@/lib/audit/auditLogger';
 import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
+import { generateImportSectionTitle } from '@/lib/utils';
 
 const excelImportPayloadSchema = z.object({
   targetSectionId: z.string().optional(),
   createNewSection: z.boolean().optional().default(false),
-  newSectionTitle: z.string().optional().default('Imported Questions'),
+  newSectionTitle: z.string().optional().default('Questions 1'),
   questions: z
     .array(
       z.object({
@@ -81,104 +82,161 @@ export async function POST(
 
     // 3. Execute import in a database transaction
     const result = await prisma.$transaction(async (tx) => {
-      let finalSectionId = targetSectionId;
-      let newlyCreatedSection: any = null;
+      const newlyCreatedSections: any[] = [];
+      const createdQuestions: any[] = [];
+      let totalImportedMarks = 0;
 
-      if (createNewSection || !finalSectionId) {
+      if (createNewSection) {
+        // Requirement: Create exactly one new section for every selected question.
+        // Sequential default titles: Questions 1, question 2, question 3, etc.
         const nextSecOrder =
           targetForm.sections.length > 0
             ? Math.max(...targetForm.sections.map((s) => s.orderIndex)) + 1
             : 0;
 
-        newlyCreatedSection = await tx.formSection.create({
-          data: {
-            formId,
-            title: newSectionTitle || 'Imported Questions',
-            description: '',
-            orderIndex: nextSecOrder,
-            nextSectionId: 'NEXT',
-          },
-        });
-        finalSectionId = newlyCreatedSection.id;
+        for (let i = 0; i < questions.length; i++) {
+          const q = questions[i];
+          const secTitle = generateImportSectionTitle(newSectionTitle, i);
+
+          const newSec = await tx.formSection.create({
+            data: {
+              formId,
+              title: secTitle,
+              description: '',
+              orderIndex: nextSecOrder + i,
+              nextSectionId: 'NEXT',
+            },
+          });
+          newlyCreatedSections.push(newSec);
+
+          const correctOpt = q.options.find((o) => o.isCorrect);
+          const correctValue = correctOpt ? correctOpt.label : q.correctAnswerText || '';
+          const marks = Number(q.marks) || 0;
+          totalImportedMarks += marks;
+
+          const newQuestion = await tx.formQuestion.create({
+            data: {
+              formId,
+              sectionId: newSec.id,
+              title: q.title,
+              description: '',
+              type: 'MULTIPLE_CHOICE',
+              orderIndex: 0,
+              isRequired: false,
+              validation: {},
+              config: {},
+              quizPoints: marks,
+              quizAnswer: {
+                correctValue,
+              },
+              quizExplanation: '',
+            },
+          });
+
+          for (let optIdx = 0; optIdx < q.options.length; optIdx++) {
+            const opt = q.options[optIdx];
+            await tx.questionOption.create({
+              data: {
+                questionId: newQuestion.id,
+                label: opt.label,
+                value: opt.value || opt.label,
+                orderIndex: optIdx,
+                isOther: false,
+                goToSectionId: null,
+              },
+            });
+          }
+
+          const completeQuestion = await tx.formQuestion.findUnique({
+            where: { id: newQuestion.id },
+            include: {
+              options: {
+                orderBy: { orderIndex: 'asc' },
+              },
+            },
+          });
+
+          if (completeQuestion) {
+            createdQuestions.push(completeQuestion);
+          }
+        }
       } else {
+        // Destination: Existing Section
+        let finalSectionId = targetSectionId;
         const sectionExists = targetForm.sections.some((s) => s.id === finalSectionId);
         if (!sectionExists) {
           finalSectionId = targetForm.sections[0]?.id;
           if (!finalSectionId) {
-            newlyCreatedSection = await tx.formSection.create({
+            const fallbackSection = await tx.formSection.create({
               data: {
                 formId,
                 title: 'Section 1',
                 orderIndex: 0,
               },
             });
-            finalSectionId = newlyCreatedSection.id;
+            newlyCreatedSections.push(fallbackSection);
+            finalSectionId = fallbackSection.id;
           }
         }
-      }
 
-      // Determine starting order index in the target section
-      const lastQuestionInSection = await tx.formQuestion.findFirst({
-        where: { sectionId: finalSectionId },
-        orderBy: { orderIndex: 'desc' },
-        select: { orderIndex: true },
-      });
-      let currentOrder = (lastQuestionInSection?.orderIndex ?? -1) + 1;
-
-      const createdQuestions: any[] = [];
-      let totalImportedMarks = 0;
-
-      for (const q of questions) {
-        // Authoritative correct value: match option with isCorrect = true, or fallback to correctAnswerText
-        const correctOpt = q.options.find((o) => o.isCorrect);
-        const correctValue = correctOpt ? correctOpt.label : q.correctAnswerText || '';
-        const marks = Number(q.marks) || 0;
-        totalImportedMarks += marks;
-
-        const newQuestion = await tx.formQuestion.create({
-          data: {
-            formId,
-            sectionId: finalSectionId!,
-            title: q.title,
-            description: '',
-            type: 'MULTIPLE_CHOICE',
-            orderIndex: currentOrder++,
-            isRequired: false,
-            validation: {},
-            config: {},
-            quizPoints: marks,
-            quizAnswer: {
-              correctValue,
-            },
-            quizExplanation: '',
-          },
+        const lastQuestionInSection = await tx.formQuestion.findFirst({
+          where: { sectionId: finalSectionId },
+          orderBy: { orderIndex: 'desc' },
+          select: { orderIndex: true },
         });
+        let currentOrder = (lastQuestionInSection?.orderIndex ?? -1) + 1;
 
-        for (let optIdx = 0; optIdx < q.options.length; optIdx++) {
-          const opt = q.options[optIdx];
-          await tx.questionOption.create({
+        for (const q of questions) {
+          const correctOpt = q.options.find((o) => o.isCorrect);
+          const correctValue = correctOpt ? correctOpt.label : q.correctAnswerText || '';
+          const marks = Number(q.marks) || 0;
+          totalImportedMarks += marks;
+
+          const newQuestion = await tx.formQuestion.create({
             data: {
-              questionId: newQuestion.id,
-              label: opt.label,
-              value: opt.value || opt.label,
-              orderIndex: optIdx,
-              isOther: false,
-              goToSectionId: null,
+              formId,
+              sectionId: finalSectionId!,
+              title: q.title,
+              description: '',
+              type: 'MULTIPLE_CHOICE',
+              orderIndex: currentOrder++,
+              isRequired: false,
+              validation: {},
+              config: {},
+              quizPoints: marks,
+              quizAnswer: {
+                correctValue,
+              },
+              quizExplanation: '',
             },
           });
-        }
 
-        const completeQuestion = await tx.formQuestion.findUnique({
-          where: { id: newQuestion.id },
-          include: {
-            options: {
-              orderBy: { orderIndex: 'asc' },
+          for (let optIdx = 0; optIdx < q.options.length; optIdx++) {
+            const opt = q.options[optIdx];
+            await tx.questionOption.create({
+              data: {
+                questionId: newQuestion.id,
+                label: opt.label,
+                value: opt.value || opt.label,
+                orderIndex: optIdx,
+                isOther: false,
+                goToSectionId: null,
+              },
+            });
+          }
+
+          const completeQuestion = await tx.formQuestion.findUnique({
+            where: { id: newQuestion.id },
+            include: {
+              options: {
+                orderBy: { orderIndex: 'asc' },
+              },
             },
-          },
-        });
+          });
 
-        if (completeQuestion) {
-          createdQuestions.push(completeQuestion);
+          if (completeQuestion) {
+            createdQuestions.push(completeQuestion);
+          }
         }
       }
 
@@ -197,15 +255,17 @@ export async function POST(
           source: 'EXCEL_UPLOAD',
           importedCount: createdQuestions.length,
           totalMarks: totalImportedMarks,
-          targetSectionId: finalSectionId,
-          createdNewSection: Boolean(newlyCreatedSection),
+          targetSectionId: newlyCreatedSections[0]?.id || targetSectionId,
+          createdNewSection: newlyCreatedSections.length > 0,
+          createdSectionCount: newlyCreatedSections.length,
         },
       });
 
       return {
         importedQuestions: createdQuestions,
-        newSection: newlyCreatedSection,
-        targetSectionId: finalSectionId,
+        newSections: newlyCreatedSections,
+        newSection: newlyCreatedSections[0] || null,
+        targetSectionId: newlyCreatedSections[0]?.id || targetSectionId,
         totalMarks: totalImportedMarks,
       };
     });
@@ -215,6 +275,7 @@ export async function POST(
       count: result.importedQuestions.length,
       totalMarks: result.totalMarks,
       questions: result.importedQuestions,
+      newSections: result.newSections,
       newSection: result.newSection,
       targetSectionId: result.targetSectionId,
     });

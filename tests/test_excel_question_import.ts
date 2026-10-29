@@ -325,9 +325,13 @@ async function runExcelImportAcceptanceTests() {
     assert.strictEqual(partialRes.status, 200);
     const partialData = await partialRes.json();
     assert.strictEqual(partialData.count, 5, 'Must import exactly 5 selected questions');
-    assert.ok(partialData.newSection, 'Must create and return new section');
-    assert.strictEqual(partialData.newSection.title, 'Safety Audit Checklist');
-    console.log('✓ Partial selection imported into dynamically created section "Safety Audit Checklist"');
+    assert.ok(partialData.newSections && partialData.newSections.length === 5, 'Must create 5 new sections');
+    assert.strictEqual(partialData.newSections[0].title, 'Safety Audit Checklist 1');
+    assert.strictEqual(partialData.newSections[1].title, 'Safety Audit Checklist 2');
+    assert.strictEqual(partialData.questions[0].sectionId, partialData.newSections[0].id);
+    assert.strictEqual(partialData.questions[1].sectionId, partialData.newSections[1].id);
+    assert.strictEqual(partialData.questions[0].orderIndex, 0);
+    console.log('✓ Partial selection imported into 5 dynamically created sections (one per question)');
 
     // -------------------------------------------------------------------------
     // TEST 6: Regression Test — Existing FormCraft Form Import Still Works

@@ -4,13 +4,14 @@ import { getAuthUserFromRequest } from '@/lib/auth/session';
 import { getUserFormRole, canEditForm } from '@/lib/auth/rbac';
 import { z } from 'zod';
 import { logActivity } from '@/lib/audit/auditLogger';
+import { generateImportSectionTitle } from '@/lib/utils';
 
 const importQuestionsSchema = z.object({
   sourceFormId: z.string().min(1, 'Source form ID is required'),
   questionIds: z.array(z.string()).min(1, 'At least one question must be selected for import'),
   targetSectionId: z.string().optional(),
   createNewSection: z.boolean().optional().default(false),
-  newSectionTitle: z.string().optional().default('Imported Questions'),
+  newSectionTitle: z.string().optional().default('Questions 1'),
 });
 
 export async function POST(
@@ -90,126 +91,201 @@ export async function POST(
 
     // 5. Execute import transactionally
     const result = await prisma.$transaction(async (tx) => {
-      let finalSectionId = targetSectionId;
-      let newlyCreatedSection: any = null;
+      const newlyCreatedSections: any[] = [];
+      const createdQuestions: any[] = [];
+      const warnings: string[] = [];
 
-      if (createNewSection || !finalSectionId) {
-        const nextSecOrder = targetForm.sections.length > 0
-          ? Math.max(...targetForm.sections.map((s) => s.orderIndex)) + 1
-          : 0;
+      // Collect target form section IDs for branching sanitization
+      const targetSectionIdSet = new Set(targetForm.sections.map((s) => s.id));
 
-        newlyCreatedSection = await tx.formSection.create({
-          data: {
-            formId: targetFormId,
-            title: newSectionTitle || 'Imported Questions',
-            description: '',
-            orderIndex: nextSecOrder,
-            nextSectionId: 'NEXT',
-          },
-        });
-        finalSectionId = newlyCreatedSection.id;
+      if (createNewSection) {
+        // Requirement: Create exactly one new section for every selected question.
+        // Sequential default titles: Questions 1, question 2, question 3, etc.
+        const nextSecOrder =
+          targetForm.sections.length > 0
+            ? Math.max(...targetForm.sections.map((s) => s.orderIndex)) + 1
+            : 0;
+
+        for (let i = 0; i < orderedSourceQuestions.length; i++) {
+          const srcQ = orderedSourceQuestions[i];
+          const secTitle = generateImportSectionTitle(newSectionTitle, i);
+
+          const newSec = await tx.formSection.create({
+            data: {
+              formId: targetFormId,
+              title: secTitle,
+              description: '',
+              orderIndex: nextSecOrder + i,
+              nextSectionId: 'NEXT',
+            },
+          });
+          newlyCreatedSections.push(newSec);
+          targetSectionIdSet.add(newSec.id);
+
+          // Sanitize question configuration
+          let cleanConfig: any = srcQ.config ? JSON.parse(JSON.stringify(srcQ.config)) : {};
+          if (cleanConfig.lookupMappingId || cleanConfig.lookupDatasetId) {
+            delete cleanConfig.lookupMappingId;
+            delete cleanConfig.lookupDatasetId;
+            warnings.push(
+              `Lookup dataset mapping stripped from question "${srcQ.title}" as lookup datasets are not shared across forms.`
+            );
+          }
+
+          const newQuestion = await tx.formQuestion.create({
+            data: {
+              formId: targetFormId,
+              sectionId: newSec.id,
+              title: srcQ.title,
+              description: srcQ.description,
+              type: srcQ.type,
+              orderIndex: 0,
+              isRequired: srcQ.isRequired,
+              validation: srcQ.validation ? JSON.parse(JSON.stringify(srcQ.validation)) : {},
+              config: cleanConfig,
+              quizPoints: srcQ.quizPoints || 0,
+              quizAnswer: srcQ.quizAnswer ? JSON.parse(JSON.stringify(srcQ.quizAnswer)) : {},
+              quizExplanation: srcQ.quizExplanation || '',
+            },
+          });
+
+          // Copy options
+          if (srcQ.options && srcQ.options.length > 0) {
+            for (let optIdx = 0; optIdx < srcQ.options.length; optIdx++) {
+              const opt = srcQ.options[optIdx];
+
+              let safeGoToSectionId = opt.goToSectionId;
+              if (safeGoToSectionId && safeGoToSectionId !== 'SUBMIT' && safeGoToSectionId !== 'NEXT') {
+                if (!targetSectionIdSet.has(safeGoToSectionId)) {
+                  safeGoToSectionId = null;
+                  warnings.push(
+                    `Branching rule for option "${opt.label}" was cleared because the target section does not exist in this form.`
+                  );
+                }
+              }
+
+              await tx.questionOption.create({
+                data: {
+                  questionId: newQuestion.id,
+                  label: opt.label,
+                  value: opt.value || `option_${optIdx + 1}`,
+                  orderIndex: opt.orderIndex,
+                  isOther: opt.isOther,
+                  goToSectionId: safeGoToSectionId,
+                  imageUrl: opt.imageUrl || null,
+                },
+              });
+            }
+          }
+
+          const completeQuestion = await tx.formQuestion.findUnique({
+            where: { id: newQuestion.id },
+            include: {
+              options: {
+                orderBy: { orderIndex: 'asc' },
+              },
+            },
+          });
+
+          if (completeQuestion) {
+            createdQuestions.push(completeQuestion);
+          }
+        }
       } else {
-        // Validate targetSectionId exists on targetForm
+        // Destination: Existing Section
+        let finalSectionId = targetSectionId;
         const sectionExists = targetForm.sections.some((s) => s.id === finalSectionId);
         if (!sectionExists) {
           finalSectionId = targetForm.sections[0]?.id;
           if (!finalSectionId) {
-            newlyCreatedSection = await tx.formSection.create({
+            const fallbackSection = await tx.formSection.create({
               data: {
                 formId: targetFormId,
                 title: 'Section 1',
                 orderIndex: 0,
               },
             });
-            finalSectionId = newlyCreatedSection.id;
+            newlyCreatedSections.push(fallbackSection);
+            finalSectionId = fallbackSection.id;
+            targetSectionIdSet.add(fallbackSection.id);
           }
         }
-      }
 
-      // Determine starting order index in the target section
-      const lastQuestionInSection = await tx.formQuestion.findFirst({
-        where: { sectionId: finalSectionId },
-        orderBy: { orderIndex: 'desc' },
-        select: { orderIndex: true },
-      });
-      let currentOrder = (lastQuestionInSection?.orderIndex ?? -1) + 1;
-
-      // Collect target form section IDs for branching sanitization
-      const targetSectionIdSet = new Set(targetForm.sections.map((s) => s.id));
-      if (newlyCreatedSection) {
-        targetSectionIdSet.add(newlyCreatedSection.id);
-      }
-
-      const createdQuestions: any[] = [];
-      const warnings: string[] = [];
-
-      for (const srcQ of orderedSourceQuestions) {
-        // Sanitize question configuration
-        let cleanConfig: any = srcQ.config ? JSON.parse(JSON.stringify(srcQ.config)) : {};
-        if (cleanConfig.lookupMappingId || cleanConfig.lookupDatasetId) {
-          // If lookup configuration exists, strip if dataset not in target form
-          delete cleanConfig.lookupMappingId;
-          delete cleanConfig.lookupDatasetId;
-          warnings.push(`Lookup dataset mapping stripped from question "${srcQ.title}" as lookup datasets are not shared across forms.`);
-        }
-
-        const newQuestion = await tx.formQuestion.create({
-          data: {
-            formId: targetFormId,
-            sectionId: finalSectionId!,
-            title: srcQ.title,
-            description: srcQ.description,
-            type: srcQ.type,
-            orderIndex: currentOrder++,
-            isRequired: srcQ.isRequired,
-            validation: srcQ.validation ? JSON.parse(JSON.stringify(srcQ.validation)) : {},
-            config: cleanConfig,
-            quizPoints: srcQ.quizPoints || 0,
-            quizAnswer: srcQ.quizAnswer ? JSON.parse(JSON.stringify(srcQ.quizAnswer)) : {},
-            quizExplanation: srcQ.quizExplanation || '',
-          },
+        // Determine starting order index in the target section
+        const lastQuestionInSection = await tx.formQuestion.findFirst({
+          where: { sectionId: finalSectionId },
+          orderBy: { orderIndex: 'desc' },
+          select: { orderIndex: true },
         });
+        let currentOrder = (lastQuestionInSection?.orderIndex ?? -1) + 1;
 
-        // Copy options
-        if (srcQ.options && srcQ.options.length > 0) {
-          for (let optIdx = 0; optIdx < srcQ.options.length; optIdx++) {
-            const opt = srcQ.options[optIdx];
-
-            // Branching rule validation: if goToSectionId refers to a section not in target, reset to null
-            let safeGoToSectionId = opt.goToSectionId;
-            if (safeGoToSectionId && safeGoToSectionId !== 'SUBMIT' && safeGoToSectionId !== 'NEXT') {
-              if (!targetSectionIdSet.has(safeGoToSectionId)) {
-                safeGoToSectionId = null;
-                warnings.push(`Branching rule for option "${opt.label}" was cleared because the target section does not exist in this form.`);
-              }
-            }
-
-            await tx.questionOption.create({
-              data: {
-                questionId: newQuestion.id,
-                label: opt.label,
-                value: opt.value || `option_${optIdx + 1}`,
-                orderIndex: opt.orderIndex,
-                isOther: opt.isOther,
-                goToSectionId: safeGoToSectionId,
-                imageUrl: opt.imageUrl || null,
-              },
-            });
+        for (const srcQ of orderedSourceQuestions) {
+          let cleanConfig: any = srcQ.config ? JSON.parse(JSON.stringify(srcQ.config)) : {};
+          if (cleanConfig.lookupMappingId || cleanConfig.lookupDatasetId) {
+            delete cleanConfig.lookupMappingId;
+            delete cleanConfig.lookupDatasetId;
+            warnings.push(
+              `Lookup dataset mapping stripped from question "${srcQ.title}" as lookup datasets are not shared across forms.`
+            );
           }
-        }
 
-        // Fetch complete question with options
-        const completeQuestion = await tx.formQuestion.findUnique({
-          where: { id: newQuestion.id },
-          include: {
-            options: {
-              orderBy: { orderIndex: 'asc' },
+          const newQuestion = await tx.formQuestion.create({
+            data: {
+              formId: targetFormId,
+              sectionId: finalSectionId!,
+              title: srcQ.title,
+              description: srcQ.description,
+              type: srcQ.type,
+              orderIndex: currentOrder++,
+              isRequired: srcQ.isRequired,
+              validation: srcQ.validation ? JSON.parse(JSON.stringify(srcQ.validation)) : {},
+              config: cleanConfig,
+              quizPoints: srcQ.quizPoints || 0,
+              quizAnswer: srcQ.quizAnswer ? JSON.parse(JSON.stringify(srcQ.quizAnswer)) : {},
+              quizExplanation: srcQ.quizExplanation || '',
             },
-          },
-        });
+          });
 
-        if (completeQuestion) {
-          createdQuestions.push(completeQuestion);
+          if (srcQ.options && srcQ.options.length > 0) {
+            for (let optIdx = 0; optIdx < srcQ.options.length; optIdx++) {
+              const opt = srcQ.options[optIdx];
+
+              let safeGoToSectionId = opt.goToSectionId;
+              if (safeGoToSectionId && safeGoToSectionId !== 'SUBMIT' && safeGoToSectionId !== 'NEXT') {
+                if (!targetSectionIdSet.has(safeGoToSectionId)) {
+                  safeGoToSectionId = null;
+                  warnings.push(
+                    `Branching rule for option "${opt.label}" was cleared because the target section does not exist in this form.`
+                  );
+                }
+              }
+
+              await tx.questionOption.create({
+                data: {
+                  questionId: newQuestion.id,
+                  label: opt.label,
+                  value: opt.value || `option_${optIdx + 1}`,
+                  orderIndex: opt.orderIndex,
+                  isOther: opt.isOther,
+                  goToSectionId: safeGoToSectionId,
+                  imageUrl: opt.imageUrl || null,
+                },
+              });
+            }
+          }
+
+          const completeQuestion = await tx.formQuestion.findUnique({
+            where: { id: newQuestion.id },
+            include: {
+              options: {
+                orderBy: { orderIndex: 'asc' },
+              },
+            },
+          });
+
+          if (completeQuestion) {
+            createdQuestions.push(completeQuestion);
+          }
         }
       }
 
@@ -227,16 +303,18 @@ export async function POST(
         details: {
           sourceFormId,
           importedCount: createdQuestions.length,
-          targetSectionId: finalSectionId,
-          createdNewSection: Boolean(newlyCreatedSection),
+          targetSectionId: newlyCreatedSections[0]?.id || targetSectionId,
+          createdNewSection: newlyCreatedSections.length > 0,
+          createdSectionCount: newlyCreatedSections.length,
           warnings,
         },
       });
 
       return {
         importedQuestions: createdQuestions,
-        newSection: newlyCreatedSection,
-        targetSectionId: finalSectionId,
+        newSections: newlyCreatedSections,
+        newSection: newlyCreatedSections[0] || null,
+        targetSectionId: newlyCreatedSections[0]?.id || targetSectionId,
         warnings,
       };
     });
@@ -245,6 +323,7 @@ export async function POST(
       success: true,
       count: result.importedQuestions.length,
       questions: result.importedQuestions,
+      newSections: result.newSections,
       newSection: result.newSection,
       targetSectionId: result.targetSectionId,
       warnings: result.warnings,

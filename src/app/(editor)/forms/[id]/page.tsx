@@ -597,11 +597,21 @@ function FormBuilderContent() {
   };
 
   // Import Questions Success Handler
-  const handleImportSuccess = (importedQuestions: QuestionData[], newSection?: SectionData) => {
+  const handleImportSuccess = (
+    importedQuestions: QuestionData[],
+    newSectionOrSections?: SectionData | SectionData[]
+  ) => {
     let nextSections = sections;
-    if (newSection) {
-      nextSections = [...sections, newSection];
-      setSections(nextSections);
+    if (newSectionOrSections) {
+      const added = Array.isArray(newSectionOrSections)
+        ? newSectionOrSections
+        : [newSectionOrSections];
+      const existingIds = new Set(sections.map((s) => s.id));
+      const fresh = added.filter((s) => !existingIds.has(s.id));
+      if (fresh.length > 0) {
+        nextSections = [...sections, ...fresh];
+        setSections(nextSections);
+      }
     }
 
     setQuestions((prev) => {
@@ -620,6 +630,9 @@ function FormBuilderContent() {
 
     if (importedQuestions.length > 0) {
       setActiveQuestionId(importedQuestions[0].id);
+      if (importedQuestions[0].sectionId) {
+        setActiveSectionId(importedQuestions[0].sectionId);
+      }
     }
     showToast(
       `Successfully imported ${importedQuestions.length} ${
