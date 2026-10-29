@@ -2,7 +2,7 @@ import { prisma } from '../src/lib/db/prisma';
 import { GET as publicFormGet } from '../src/app/api/public/forms/[publicId]/route';
 import { POST as publicSubmissionPost } from '../src/app/api/public/forms/[publicId]/submissions/route';
 import { POST as quizAttemptPost } from '../src/app/api/public/forms/[publicId]/quiz/attempt/route';
-import { PATCH as formPatch } from '../src/app/api/forms/[id]/route';
+import { GET as formGet, PATCH as formPatch } from '../src/app/api/forms/[id]/route';
 import { updateFormSchema } from '../src/lib/validation/formSchema';
 import { resolveParticipantIdentifier } from '../src/lib/submission/duplicatePreventionService';
 import { reconcileAttemptTimeout } from '../src/lib/quiz/quizAttemptService';
@@ -188,13 +188,26 @@ async function runTests() {
   console.log('  ✓ Ordinary email question functions normally and collects data without collectEmail toggle');
 
   // ==========================================
-  // ISSUE 2: Fix "Require sign-in"
+  // ISSUE 2: Remove "Require sign-in" completely
   // ==========================================
-  console.log('\n[TEST ISSUE 2] Verify "Require sign-in" enforcement on frontend and backend');
+  console.log('\n[TEST ISSUE 2] Verify complete removal of "Require sign-in" and unauthenticated access for all public forms');
 
-  // 1. Create a form with requireAuth = true
+  // 1. Verify SettingsTab.tsx has no "Require sign-in" toggle or description
+  assert.strictEqual(
+    settingsTabContent.includes('Require sign-in'),
+    false,
+    'SettingsTab.tsx must not contain "Require sign-in"'
+  );
+  assert.strictEqual(
+    settingsTabContent.includes('Respondents must be logged in to access and submit this form'),
+    false,
+    'SettingsTab.tsx must not contain "Respondents must be logged in to access and submit this form"'
+  );
+  console.log('  ✓ SettingsTab.tsx has no "Require sign-in" toggle or description');
+
+  // 2. Existing form with requireAuth = true must allow public access without requiring login
   const { form: formRequireAuth, questions: quizQuestions } = await createTestForm({
-    title: 'Protected Form Requiring Auth',
+    title: 'Legacy Form with requireAuth True',
     ownerId: owner.id,
     isQuiz: true,
     settings: {
@@ -214,40 +227,19 @@ async function runTests() {
 
   const quizQ = quizQuestions[0];
 
-  // 2. Unauthenticated GET /api/public/forms/[publicId] MUST return 401 and redirectUrl
+  // 3. Unauthenticated GET /api/public/forms/[publicId] MUST return 200 with form data
   const unauthGetReq = new NextRequest(
     `http://localhost:3000/api/public/forms/${formRequireAuth.publicId}`
   );
   const unauthGetRes = await publicFormGet(unauthGetReq, {
     params: Promise.resolve({ publicId: formRequireAuth.publicId }),
   });
-  assert.strictEqual(unauthGetRes.status, 401, 'Unauthenticated GET public form returns 401');
+  assert.strictEqual(unauthGetRes.status, 200, 'Unauthenticated GET public form returns 200 even if requireAuth is true');
   const unauthGetData = await unauthGetRes.json();
-  assert.strictEqual(unauthGetData.requireAuth, true, 'Returns requireAuth: true');
-  assert.strictEqual(
-    unauthGetData.redirectUrl,
-    `/login?redirect=/f/${formRequireAuth.publicId}`,
-    'Returns correct redirect URL with return path'
-  );
-  assert.strictEqual(unauthGetData.form, undefined, 'Form data is protected and not exposed to unauthenticated user');
-  console.log('  ✓ Unauthenticated GET /api/public/forms/[publicId] is protected (401 + redirect URL)');
+  assert.strictEqual(unauthGetData.form?.title, 'Legacy Form with requireAuth True', 'Form data exposed to public respondent');
+  console.log('  ✓ Public GET /api/public/forms/[publicId] loads without requiring login');
 
-  // 3. Authenticated GET /api/public/forms/[publicId] MUST succeed with 200
-  const authGetReq = new NextRequest(
-    `http://localhost:3000/api/public/forms/${formRequireAuth.publicId}`,
-    {
-      headers: { Cookie: respondentCookie },
-    }
-  );
-  const authGetRes = await publicFormGet(authGetReq, {
-    params: Promise.resolve({ publicId: formRequireAuth.publicId }),
-  });
-  assert.strictEqual(authGetRes.status, 200, 'Authenticated GET public form returns 200');
-  const authGetData = await authGetRes.json();
-  assert.strictEqual(authGetData.form?.title, 'Protected Form Requiring Auth', 'Form data exposed to authenticated user');
-  console.log('  ✓ Authenticated GET /api/public/forms/[publicId] returns form data');
-
-  // 4. Unauthenticated POST /api/public/forms/[publicId]/submissions MUST return 401
+  // 4. Unauthenticated POST /api/public/forms/[publicId]/submissions MUST succeed (200)
   const unauthSubReq = new NextRequest(
     `http://localhost:3000/api/public/forms/${formRequireAuth.publicId}/submissions`,
     {
@@ -261,30 +253,10 @@ async function runTests() {
   const unauthSubRes = await publicSubmissionPost(unauthSubReq, {
     params: Promise.resolve({ publicId: formRequireAuth.publicId }),
   });
-  assert.strictEqual(unauthSubRes.status, 401, 'Unauthenticated submission returns 401');
-  console.log('  ✓ Unauthenticated POST /submissions is protected (401)');
+  assert.strictEqual(unauthSubRes.status, 200, 'Unauthenticated submission returns 200 even if requireAuth is true');
+  console.log('  ✓ Public POST /submissions succeeds without requiring login');
 
-  // 5. Authenticated POST /api/public/forms/[publicId]/submissions MUST succeed
-  const authSubReq = new NextRequest(
-    `http://localhost:3000/api/public/forms/${formRequireAuth.publicId}/submissions`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Cookie: respondentCookie,
-      },
-      body: JSON.stringify({
-        answers: [{ questionId: quizQ.id, value: 'Paris' }],
-      }),
-    }
-  );
-  const authSubRes = await publicSubmissionPost(authSubReq, {
-    params: Promise.resolve({ publicId: formRequireAuth.publicId }),
-  });
-  assert.strictEqual(authSubRes.status, 200, 'Authenticated submission returns 200');
-  console.log('  ✓ Authenticated POST /submissions succeeds');
-
-  // 6. Unauthenticated Quiz Attempt POST MUST return 401
+  // 5. Unauthenticated Quiz Attempt POST MUST return 200
   const unauthAttemptReq = new NextRequest(
     `http://localhost:3000/api/public/forms/${formRequireAuth.publicId}/quiz/attempt`,
     {
@@ -298,16 +270,23 @@ async function runTests() {
   const unauthAttemptRes = await quizAttemptPost(unauthAttemptReq, {
     params: Promise.resolve({ publicId: formRequireAuth.publicId }),
   });
-  assert.strictEqual(unauthAttemptRes.status, 401, 'Unauthenticated quiz attempt returns 401');
-  console.log('  ✓ Unauthenticated POST /quiz/attempt is protected (401)');
+  assert.strictEqual(unauthAttemptRes.status, 200, 'Unauthenticated quiz attempt returns 200');
+  console.log('  ✓ Public POST /quiz/attempt succeeds without requiring login');
 
-  // 7. Verify public form (requireAuth = false) allows unauthenticated access
-  const { form: formPublic } = await createTestForm({
+  // 6. Verify form with requireAuth = false also allows public access and submission
+  const { form: formPublic, questions: pubQuestions } = await createTestForm({
     title: 'Public Form Without Auth',
     ownerId: owner.id,
     settings: {
       requireAuth: false,
     },
+    questions: [
+      {
+        title: 'Feedback',
+        type: 'SHORT_ANSWER',
+        isRequired: true,
+      },
+    ],
   });
   const pubGetReq = new NextRequest(
     `http://localhost:3000/api/public/forms/${formPublic.publicId}`
@@ -315,8 +294,69 @@ async function runTests() {
   const pubGetRes = await publicFormGet(pubGetReq, {
     params: Promise.resolve({ publicId: formPublic.publicId }),
   });
-  assert.strictEqual(pubGetRes.status, 200, 'Public form allows unauthenticated access when requireAuth is disabled');
-  console.log('  ✓ Unauthenticated access preserved when requireAuth is disabled');
+  assert.strictEqual(pubGetRes.status, 200, 'Public form allows unauthenticated access when requireAuth is false');
+
+  const pubSubReq = new NextRequest(
+    `http://localhost:3000/api/public/forms/${formPublic.publicId}/submissions`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        answers: [{ questionId: pubQuestions[0].id, value: 'Great form!' }],
+      }),
+    }
+  );
+  const pubSubRes = await publicSubmissionPost(pubSubReq, {
+    params: Promise.resolve({ publicId: formPublic.publicId }),
+  });
+  assert.strictEqual(pubSubRes.status, 200, 'Public form submission succeeds without login');
+  console.log('  ✓ Public forms with requireAuth false load and submit without login');
+
+  // 7. Verify Form Owner & Admin management authorization remains strictly enforced
+  const unauthOwnerGet = new NextRequest(`http://localhost:3000/api/forms/${formRequireAuth.id}`);
+  const unauthOwnerGetRes = await formGet(unauthOwnerGet, {
+    params: Promise.resolve({ id: formRequireAuth.id }),
+  });
+  assert.strictEqual(unauthOwnerGetRes.status, 401, 'Unauthenticated form editor GET returns 401');
+
+  const unauthOwnerPatch = new NextRequest(`http://localhost:3000/api/forms/${formRequireAuth.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Hacked Title' }),
+  });
+  const unauthOwnerPatchRes = await formPatch(unauthOwnerPatch, {
+    params: Promise.resolve({ id: formRequireAuth.id }),
+  });
+  assert.strictEqual(unauthOwnerPatchRes.status, 401, 'Unauthenticated form editor PATCH returns 401');
+
+  // Non-owner (respondent) trying to access editor routes MUST return 403
+  const forbiddenOwnerGet = new NextRequest(`http://localhost:3000/api/forms/${formRequireAuth.id}`, {
+    headers: { Cookie: respondentCookie },
+  });
+  const forbiddenOwnerGetRes = await formGet(forbiddenOwnerGet, {
+    params: Promise.resolve({ id: formRequireAuth.id }),
+  });
+  assert.strictEqual(forbiddenOwnerGetRes.status, 403, 'Non-owner form editor GET returns 403');
+
+  // Authorized Owner CAN view and edit form
+  const authOwnerGet = new NextRequest(`http://localhost:3000/api/forms/${formRequireAuth.id}`, {
+    headers: { Cookie: ownerCookie },
+  });
+  const authOwnerGetRes = await formGet(authOwnerGet, {
+    params: Promise.resolve({ id: formRequireAuth.id }),
+  });
+  assert.strictEqual(authOwnerGetRes.status, 200, 'Owner form editor GET returns 200');
+
+  const authOwnerPatch = new NextRequest(`http://localhost:3000/api/forms/${formRequireAuth.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+    body: JSON.stringify({ title: 'Updated Legacy Form Title' }),
+  });
+  const authOwnerPatchRes = await formPatch(authOwnerPatch, {
+    params: Promise.resolve({ id: formRequireAuth.id }),
+  });
+  assert.strictEqual(authOwnerPatchRes.status, 200, 'Owner form editor PATCH returns 200');
+  console.log('  ✓ Form owner and administrative authentication and authorization strictly enforced');
 
   // ==========================================
   // ISSUE 3: Remove Email Address and Signed-in Account identification methods

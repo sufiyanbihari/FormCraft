@@ -43,18 +43,6 @@ export async function POST(
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
     }
 
-    const user = await getAuthUserFromRequest(request);
-    if (form.settings?.requireAuth && !user) {
-      return NextResponse.json(
-        {
-          error: 'Authentication required: You must be signed in to access this quiz.',
-          requireAuth: true,
-          redirectUrl: `/login?redirect=/f/${publicId}`,
-        },
-        { status: 401 }
-      );
-    }
-
     const attempt = await prisma.quizAttempt.findUnique({
       where: { id: attemptId },
     });

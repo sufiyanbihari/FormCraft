@@ -239,19 +239,10 @@ function PublicFormContent() {
       const data = await res.json();
 
       if (!res.ok) {
-        if (res.status === 401 || data.requireAuth) {
-          const redirectTarget = data.redirectUrl || `/login?redirect=/f/${publicId}`;
-          window.location.href = redirectTarget;
-          return;
-        }
         setIsClosed(true);
         setClosedReason(data.error || 'This form does not exist or has not been published.');
       } else {
         let loadedForm = data.form;
-        if (loadedForm?.settings?.requireAuth && !data.isAuthenticated) {
-          window.location.href = `/login?redirect=/f/${publicId}`;
-          return;
-        }
         if (loadedForm?.settings?.shuffleQuestions && loadedForm.sections) {
           loadedForm = {
             ...loadedForm,
@@ -866,11 +857,6 @@ function PublicFormContent() {
   };
 
   const validateCattleSurvey = () => {
-    if (formData?.settings?.requireAuth && !isAuthenticated) {
-      setValidationError('Sign-in required: You must be signed in to submit this form.');
-      return false;
-    }
-
     // 1. Validate Society Questions
     for (const q of societyQuestions) {
       const val = answers[q.id];
@@ -954,12 +940,6 @@ function PublicFormContent() {
 
   // Validate required questions and formats in current section before moving forward
   const validateCurrentSection = () => {
-    // If requireAuth is enabled and user is not signed in
-    if (formData?.settings?.requireAuth && !isAuthenticated) {
-      setValidationError('Sign-in required: You must be signed in to submit this form.');
-      return false;
-    }
-
     for (const q of questionsInCurrentSection) {
       // Non-interactive block types don't require validation
       if (q.type === 'SECTION_HEADER' || q.type === 'TEXT_BLOCK' || q.type === 'IMAGE_BLOCK' || q.type === 'VIDEO_EMBED') {
@@ -1558,32 +1538,6 @@ function PublicFormContent() {
     );
   }
 
-  if (formData.settings?.requireAuth && !isAuthenticated) {
-    return (
-      <div
-        className="min-h-screen py-10 pb-20 px-4 transition-colors flex items-center justify-center"
-        style={{
-          backgroundColor: effectiveBg,
-          fontFamily: theme.fontFamily || 'Inter',
-        }}
-      >
-        <div className="max-w-md w-full bg-white dark:bg-gray-900 p-8 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800 text-center space-y-4">
-          <ShieldCheck className="h-12 w-12 text-amber-600 mx-auto" />
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Sign-in Required</h1>
-          <p className="text-sm text-gray-500">
-            You must be signed in with a FormCraft account to access and submit this form.
-          </p>
-          <a
-            href={`/login?redirect=/f/${publicId}`}
-            className="inline-flex items-center justify-center w-full px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl transition-colors shadow-sm"
-          >
-            Sign In to Continue
-          </a>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div
       className="min-h-screen py-10 pb-20 px-4 transition-colors"
@@ -1747,14 +1701,6 @@ function PublicFormContent() {
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{validationError}</span>
             </div>
-            {formData?.settings?.requireAuth && !isAuthenticated && (
-              <a
-                href={`/login?redirect=/f/${publicId}`}
-                className="underline font-bold text-red-700 dark:text-red-300 hover:opacity-80 shrink-0 self-start sm:self-auto"
-              >
-                Sign in now
-              </a>
-            )}
           </div>
         )}
 

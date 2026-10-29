@@ -76,14 +76,8 @@ export async function POST(
       }
     }
 
-    // 2. Validate session if authentication is required
+    // 2. Identify session if user is logged in
     const authenticatedUser = await getAuthUserFromRequest(request);
-    if (settings?.requireAuth && !authenticatedUser) {
-      return NextResponse.json(
-        { error: 'Authentication is required to submit this form.' },
-        { status: 401 }
-      );
-    }
 
     const body = await request.json();
     const parseResult = submitFormSchema.safeParse(body);
@@ -159,14 +153,6 @@ export async function POST(
           submissionId: existingSub.id,
         });
       }
-    }
-
-    // Enforce requireAuth setting
-    if (settings?.requireAuth && !authenticatedUser) {
-      return NextResponse.json(
-        { error: 'Authentication required: You must be signed in to submit this form.' },
-        { status: 401 }
-      );
     }
 
     // Map answers by questionId

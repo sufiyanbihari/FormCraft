@@ -457,21 +457,6 @@ export default function SettingsTab({
           </CardDescription>
         </CardHeader>
         <CardContent className="divide-y divide-gray-100 dark:divide-gray-800 text-xs">
-          <div className="py-3 flex items-center justify-between">
-            <div>
-              <p className="font-semibold text-gray-800 dark:text-gray-200">
-                Require sign-in
-              </p>
-              <p className="text-gray-500 text-[11px]">
-                Respondents must be logged in to access and submit this form
-              </p>
-            </div>
-            <Switch
-              checked={settings?.requireAuth || false}
-              onCheckedChange={(checked) => onChangeSettings({ requireAuth: checked })}
-            />
-          </div>
-
           {/* Duplicate Response Prevention Section */}
           <div className="py-4 space-y-3.5">
             <div className="flex items-center justify-between">
@@ -543,9 +528,7 @@ export default function SettingsTab({
                   <Select
                     value={settings?.editingAuthMethod || 'SECURE_EDIT_LINK'}
                     onValueChange={(val) => {
-                      const updates: any = { editingAuthMethod: val };
-                      if (val === 'AUTH_USER') updates.requireAuth = true;
-                      onChangeSettings(updates);
+                      onChangeSettings({ editingAuthMethod: val });
                     }}
                   >
                     <SelectTrigger className="h-9 text-xs">

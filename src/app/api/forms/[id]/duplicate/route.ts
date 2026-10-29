@@ -79,7 +79,7 @@ export async function POST(
                   shuffleQuestions: original.settings.shuffleQuestions,
                   confirmationMessage: original.settings.confirmationMessage,
                   allowMultipleSubmissions: original.settings.allowMultipleSubmissions,
-                  requireAuth: original.settings.requireAuth,
+                  requireAuth: false,
                   collectEmail: original.settings.collectEmail,
                   restrictOneResponse: original.settings.restrictOneResponse,
                   allowResponseEditing: original.settings.allowResponseEditing,
