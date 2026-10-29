@@ -68,7 +68,7 @@ export async function POST(
     // Default points per question based on form.settings.quizDefaultPoints if quiz
     const isPresentationType = type === 'SECTION_HEADER' || type === 'TEXT_BLOCK' || type === 'IMAGE_BLOCK' || type === 'VIDEO_EMBED';
     const defaultPoints = (form.isQuiz && !isPresentationType) ? (form.settings?.quizDefaultPoints ?? 1) : 0;
-    const finalQuizPoints = quizPoints !== undefined ? quizPoints : defaultPoints;
+    const finalQuizPoints = (quizPoints !== undefined && quizPoints !== null) ? quizPoints : defaultPoints;
 
     const question = await prisma.$transaction(async (tx) => {
       const created = await tx.formQuestion.create({

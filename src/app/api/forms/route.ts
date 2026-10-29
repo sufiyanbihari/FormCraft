@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { title, description, isQuiz, templateId } = result.data;
+    const { title, description, isQuiz, templateId, settings } = result.data;
 
     // Check if creating from a template
     if (templateId) {
@@ -238,6 +238,7 @@ export async function POST(request: NextRequest) {
               confirmationMessage: 'Your response has been recorded.',
               showProgressBar: true,
               allowMultipleSubmissions: true,
+              quizDefaultPoints: Boolean(isQuiz) ? (settings?.quizDefaultPoints ?? 1) : 1,
             },
           },
         },
@@ -254,6 +255,10 @@ export async function POST(request: NextRequest) {
       });
 
       // Create default Question 1 (Multiple Choice)
+      const isQuizForm = Boolean(isQuiz);
+      const configuredDefaultPoints = settings?.quizDefaultPoints ?? 1;
+      const defaultQuestionPoints = isQuizForm ? configuredDefaultPoints : 0;
+
       const question = await tx.formQuestion.create({
         data: {
           formId: created.id,
@@ -262,6 +267,7 @@ export async function POST(request: NextRequest) {
           type: 'MULTIPLE_CHOICE',
           orderIndex: 0,
           isRequired: false,
+          quizPoints: defaultQuestionPoints,
         },
       });
 

@@ -97,6 +97,7 @@ export const createFormSchema = z.object({
   description: z.string().max(2000).optional().default(''),
   isQuiz: z.boolean().optional().default(false),
   templateId: z.string().optional(),
+  settings: formSettingsSchema.partial().optional(),
 });
 
 export const updateFormSchema = z.object({

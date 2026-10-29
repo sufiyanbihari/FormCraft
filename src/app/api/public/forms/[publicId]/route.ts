@@ -89,6 +89,7 @@ export async function GET(
         isRequired: q.isRequired,
         orderIndex: q.orderIndex,
         validation: q.validation,
+        config: q.config,
         quizPoints: form.isQuiz ? q.quizPoints : 0,
         timeLimitSeconds: form.isQuiz
           ? (q.timeLimitSeconds && q.timeLimitSeconds > 0

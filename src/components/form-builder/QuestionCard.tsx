@@ -120,6 +120,7 @@ interface QuestionCardProps {
   borderRadius?: string;
   lookupMappings?: any[];
   onOpenLookup?: () => void;
+  quizDefaultPoints?: number;
 }
 
 interface SizeLimitControlProps {
@@ -254,6 +255,7 @@ export default function QuestionCard({
   borderRadius = 'rounded-xl',
   lookupMappings,
   onOpenLookup,
+  quizDefaultPoints = 1,
 }: QuestionCardProps) {
   const [showAnswerKey, setShowAnswerKey] = useState(false);
   const [showDescription, setShowDescription] = useState(Boolean(question.description));
@@ -819,14 +821,25 @@ export default function QuestionCard({
               onValueChange={(val) => {
                 const isTargetChoice =
                   val === 'MULTIPLE_CHOICE' || val === 'CHECKBOXES' || val === 'DROPDOWN';
+                const isOldPresentation =
+                  question.type === 'SECTION_HEADER' ||
+                  question.type === 'TEXT_BLOCK' ||
+                  question.type === 'IMAGE_BLOCK' ||
+                  question.type === 'VIDEO_EMBED';
+                const isNewPresentation =
+                  val === 'SECTION_HEADER' ||
+                  val === 'TEXT_BLOCK' ||
+                  val === 'IMAGE_BLOCK' ||
+                  val === 'VIDEO_EMBED';
+
+                const delta: Partial<QuestionData> = { type: val };
                 if (isTargetChoice && (!question.options || question.options.length === 0)) {
-                  onChange({
-                    type: val,
-                    options: [{ label: 'Option 1', value: 'Option 1', orderIndex: 0, isOther: false }],
-                  });
-                } else {
-                  onChange({ type: val });
+                  delta.options = [{ label: 'Option 1', value: 'Option 1', orderIndex: 0, isOther: false }];
                 }
+                if (isQuiz && isOldPresentation && !isNewPresentation && (!question.quizPoints || question.quizPoints === 0)) {
+                  delta.quizPoints = quizDefaultPoints ?? 1;
+                }
+                onChange(delta);
               }}
             >
               <SelectTrigger className="h-10 text-xs bg-gray-50/80 dark:bg-gray-800">
@@ -2146,7 +2159,7 @@ export default function QuestionCard({
                   <Input
                     type="number"
                     min="0"
-                    value={question.quizPoints ?? 0}
+                    value={question.quizPoints !== undefined ? question.quizPoints : (isQuiz ? (quizDefaultPoints ?? 1) : 0)}
                     onChange={(e) => onChange({ quizPoints: parseInt(e.target.value, 10) || 0 })}
                     className="w-16 h-7 text-xs font-bold text-center"
                   />
@@ -2445,7 +2458,7 @@ export default function QuestionCard({
                 className="text-xs text-purple-600 hover:text-purple-700 h-8"
               >
                 <Award className="h-3.5 w-3.5 mr-1.5" />
-                Answer key ({question.quizPoints ?? 0} pts)
+                Answer key ({question.quizPoints !== undefined ? question.quizPoints : (isQuiz ? (quizDefaultPoints ?? 1) : 0)} pts)
               </Button>
               {question.timeLimitSeconds && question.timeLimitSeconds > 0 ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-md">

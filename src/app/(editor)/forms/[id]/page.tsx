@@ -525,6 +525,14 @@ function FormBuilderContent() {
     const orig = questions.find((q) => q.id === qId);
     if (!orig) return;
 
+    const isPresentation =
+      orig.type === 'SECTION_HEADER' ||
+      orig.type === 'TEXT_BLOCK' ||
+      orig.type === 'IMAGE_BLOCK' ||
+      orig.type === 'VIDEO_EMBED';
+    const fallbackPoints = (isQuiz && !isPresentation) ? (settings?.quizDefaultPoints ?? 1) : 0;
+    const duplicatedPoints = orig.quizPoints !== undefined ? orig.quizPoints : fallbackPoints;
+
     try {
       const res = await fetch(`/api/forms/${formId}/questions`, {
         method: 'POST',
@@ -537,7 +545,7 @@ function FormBuilderContent() {
           isRequired: orig.isRequired,
           validation: orig.validation,
           config: orig.config,
-          quizPoints: orig.quizPoints,
+          quizPoints: duplicatedPoints,
           quizAnswer: orig.quizAnswer,
           quizExplanation: orig.quizExplanation,
           options: orig.options.map((o) => ({
@@ -593,6 +601,60 @@ function FormBuilderContent() {
       }
     } catch {
       showToast('Failed to delete question');
+    }
+  };
+
+  // Toggle Quiz Mode with immediate state & server sync and question points initialization
+  const handleToggleQuiz = async (checked: boolean) => {
+    setIsQuiz(checked);
+    const configuredDefault = settings?.quizDefaultPoints ?? 1;
+
+    let updatedQuestions = questions;
+    if (checked) {
+      let hasChanges = false;
+      updatedQuestions = questions.map((q) => {
+        const isPresentation =
+          q.type === 'SECTION_HEADER' ||
+          q.type === 'TEXT_BLOCK' ||
+          q.type === 'IMAGE_BLOCK' ||
+          q.type === 'VIDEO_EMBED';
+        if (!isPresentation && (q.quizPoints === 0 || q.quizPoints === undefined || q.quizPoints === null)) {
+          hasChanges = true;
+          saveQuestionDeltaToServer(q.id, { quizPoints: configuredDefault });
+          return { ...q, quizPoints: configuredDefault };
+        }
+        return q;
+      });
+
+      if (hasChanges) {
+        setQuestions(updatedQuestions);
+      }
+    }
+
+    updateHistory({
+      title,
+      description,
+      sections,
+      questions: updatedQuestions,
+      theme,
+      settings,
+      isQuiz: checked,
+    });
+
+    try {
+      await fetch(`/api/forms/${formId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isQuiz: checked,
+          settings: {
+            ...settings,
+            quizDefaultPoints: configuredDefault,
+          },
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to update quiz toggle:', err);
     }
   };
 
@@ -892,6 +954,7 @@ function FormBuilderContent() {
                             borderRadius={theme.borderRadius}
                             lookupMappings={lookupMappings}
                             onOpenLookup={() => setIsLookupOpen(true)}
+                            quizDefaultPoints={settings?.quizDefaultPoints ?? 1}
                           />
                         ))}
                       </SortableContext>
@@ -927,7 +990,7 @@ function FormBuilderContent() {
         {activeTab === 'settings' && (
           <SettingsTab
             isQuiz={isQuiz}
-            onToggleQuiz={setIsQuiz}
+            onToggleQuiz={handleToggleQuiz}
             settings={settings}
             onChangeSettings={(delta) => setSettings((prev: any) => ({ ...prev, ...delta }))}
             primaryColor={theme.primaryColor}

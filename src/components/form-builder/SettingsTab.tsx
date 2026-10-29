@@ -5,7 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Award, Mail, Clock, Eye, ShieldCheck, Sliders, Calendar, Users, Hourglass, Navigation, AlertTriangle, ArrowRight, ExternalLink, Edit3, Key, Lock, CheckCircle2, Link2, Info } from 'lucide-react';
+import { Award, Mail, Clock, Eye, ShieldCheck, Sliders, Calendar, Users, Hourglass, Navigation, AlertTriangle, ArrowRight, ExternalLink, Edit3, Key, Lock, Link2, Info } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import QuizRosterModal from './QuizRosterModal';
@@ -85,58 +85,8 @@ export default function SettingsTab({
 
         {isQuiz && (
           <CardContent className="space-y-5 pt-3 text-xs border-t border-gray-100 dark:border-gray-800">
-            {/* Release Grades Setting */}
-            <div className="space-y-2">
-              <label className="font-bold text-gray-800 dark:text-gray-200 block">
-                Release Grades
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div
-                  onClick={() => onChangeSettings({ quizReleaseGrade: 'IMMEDIATE' })}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col gap-1 ${
-                    (settings?.quizReleaseGrade ?? 'IMMEDIATE') === 'IMMEDIATE'
-                      ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
-                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-gray-900 dark:text-gray-100">
-                      Immediately after each submission
-                    </span>
-                    {(settings?.quizReleaseGrade ?? 'IMMEDIATE') === 'IMMEDIATE' && (
-                      <span className="h-2 w-2 rounded-full bg-amber-500" />
-                    )}
-                  </div>
-                  <p className="text-[11px] text-gray-500">
-                    Respondents view their score and results instantly upon submitting
-                  </p>
-                </div>
-
-                <div
-                  onClick={() => onChangeSettings({ quizReleaseGrade: 'AFTER_REVIEW' })}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col gap-1 ${
-                    settings?.quizReleaseGrade === 'AFTER_REVIEW'
-                      ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
-                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-gray-900 dark:text-gray-100">
-                      Later, after manual review
-                    </span>
-                    {settings?.quizReleaseGrade === 'AFTER_REVIEW' && (
-                      <span className="h-2 w-2 rounded-full bg-amber-500" />
-                    )}
-                  </div>
-                  <p className="text-[11px] text-gray-500">
-                    Withhold scores until you manually review and release grades from the Responses tab
-                  </p>
-                </div>
-              </div>
-            </div>
-
             {/* Respondent Review Settings */}
-            <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+            <div className="space-y-3">
               <label className="font-bold text-gray-800 dark:text-gray-200 block">
                 Respondent Results Display
               </label>
