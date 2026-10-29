@@ -36,52 +36,10 @@ export function resolveParticipantIdentifier({
   answers: Array<{ questionId: string; value: any }>;
   ipHash?: string | null;
 }): { success: true; identity: ResolvedIdentifier } | { success: false; error: string; statusCode: number } {
-  // If legacy restrictOneResponse is true and duplicateIdentifierMethod is not explicitly configured,
-  // default to AUTH_USER if requireAuth is set, else VERIFIED_EMAIL if collectEmail is set.
-  let method: DuplicateIdentifierMethod = (settings?.duplicateIdentifierMethod as DuplicateIdentifierMethod) || 'AUTH_USER';
-  if (!settings?.duplicateIdentifierMethod) {
-    if (settings?.requireAuth) {
-      method = 'AUTH_USER';
-    } else if (settings?.collectEmail) {
-      method = 'VERIFIED_EMAIL';
-    }
-  }
-
-  if (method === 'AUTH_USER') {
-    if (!authenticatedUser?.id) {
-      return {
-        success: false,
-        error: 'You must be signed in with a FormCraft account to submit this form (duplicate response prevention is active).',
-        statusCode: 401,
-      };
-    }
-    return {
-      success: true,
-      identity: {
-        method: 'AUTH_USER',
-        identifier: authenticatedUser.id,
-        label: authenticatedUser.email || authenticatedUser.name || authenticatedUser.id,
-      },
-    };
-  }
-
-  if (method === 'VERIFIED_EMAIL') {
-    const email = authenticatedUser?.email || respondentEmail?.trim().toLowerCase();
-    if (!email) {
-      return {
-        success: false,
-        error: 'A valid email address is required to submit this form (duplicate response prevention is active).',
-        statusCode: 400,
-      };
-    }
-    return {
-      success: true,
-      identity: {
-        method: 'VERIFIED_EMAIL',
-        identifier: email,
-        label: email,
-      },
-    };
+  // Resolve identification method, falling back removed methods (AUTH_USER, VERIFIED_EMAIL) or empty values to IP_ADDRESS
+  let method: DuplicateIdentifierMethod = (settings?.duplicateIdentifierMethod as DuplicateIdentifierMethod) || 'IP_ADDRESS';
+  if (method === 'AUTH_USER' || method === 'VERIFIED_EMAIL' || !method) {
+    method = 'IP_ADDRESS';
   }
 
   if (method === 'QUESTION_FIELD') {
@@ -102,8 +60,7 @@ export function resolveParticipantIdentifier({
         };
       }
     }
-
-    // If identity question is missing or unanswered, fall back gracefully to supported identity methods
+    // If identity question is missing or unanswered, fall back gracefully
     if (authenticatedUser?.id) {
       return {
         success: true,
@@ -135,26 +92,15 @@ export function resolveParticipantIdentifier({
     };
   }
 
-  if (method === 'IP_ADDRESS') {
-    if (!ipHash) {
-      return {
-        success: true,
-        identity: {
-          method: 'IP_ADDRESS',
-          identifier: 'anonymous-device',
-          label: 'Client Device',
-        },
-      };
-    }
-    return {
-      success: true,
-      identity: {
-        method: 'IP_ADDRESS',
-        identifier: ipHash,
-        label: 'Client Device',
-      },
-    };
-  }
+  // Supported method: IP_ADDRESS (Client Device / IP)
+  return {
+    success: true,
+    identity: {
+      method: 'IP_ADDRESS',
+      identifier: ipHash || 'anonymous-device',
+      label: 'Client Device',
+    },
+  };
 
   return {
     success: false,

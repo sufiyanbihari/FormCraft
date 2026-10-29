@@ -161,8 +161,28 @@ export async function PATCH(
       if (settings) {
         const previousSettings = await tx.formSettings.findUnique({
           where: { formId: id },
-          select: { quizDefaultPoints: true },
         });
+
+        // Cross-field validation for Both Timers mode
+        const effectiveTimerMode = settings.quizTimerMode !== undefined ? settings.quizTimerMode : previousSettings?.quizTimerMode;
+        if (effectiveTimerMode === 'BOTH') {
+          const effectiveDurationMin = settings.quizDurationMinutes !== undefined ? settings.quizDurationMinutes : previousSettings?.quizDurationMinutes;
+          const effectiveQuestionSec = settings.quizQuestionTimeLimitSeconds !== undefined ? settings.quizQuestionTimeLimitSeconds : previousSettings?.quizQuestionTimeLimitSeconds;
+
+          if (effectiveQuestionSec !== null && effectiveQuestionSec !== undefined) {
+            if (effectiveQuestionSec <= 0) {
+              throw new Error('VALIDATION_ERROR: Per-question time limit must be greater than zero.');
+            }
+            if (effectiveDurationMin !== null && effectiveDurationMin !== undefined && effectiveDurationMin > 0) {
+              const maxAllowedSec = effectiveDurationMin * 60;
+              if (effectiveQuestionSec > maxAllowedSec) {
+                throw new Error(
+                  `VALIDATION_ERROR: Per-question time limit (${effectiveQuestionSec}s) cannot exceed overall quiz duration (${maxAllowedSec}s).`
+                );
+              }
+            }
+          }
+        }
 
         if (
           settings.quizDefaultPoints !== undefined &&
@@ -265,7 +285,13 @@ export async function PATCH(
     });
 
     return NextResponse.json({ form: updatedForm });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.startsWith('VALIDATION_ERROR: ')) {
+      return NextResponse.json(
+        { error: error.message.replace('VALIDATION_ERROR: ', '') },
+        { status: 400 }
+      );
+    }
     console.error('Failed to update form:', error);
     return NextResponse.json({ error: 'Failed to update form' }, { status: 500 });
   }

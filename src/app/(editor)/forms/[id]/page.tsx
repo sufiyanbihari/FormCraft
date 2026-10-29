@@ -300,6 +300,16 @@ function FormBuilderContent() {
 
   const saveFormToServer = useCallback(async () => {
     if (!formId || isLoading || !form) return;
+
+    if (settings?.quizTimerMode === 'BOTH') {
+      const durMin = Number(settings.quizDurationMinutes || 0);
+      const qSec = Number(settings.quizQuestionTimeLimitSeconds || 0);
+      if (durMin <= 0 || qSec <= 0 || qSec > durMin * 60) {
+        setSaveStatus('error');
+        return;
+      }
+    }
+
     setSaveStatus('saving');
     try {
       const res = await fetch(`/api/forms/${formId}`, {

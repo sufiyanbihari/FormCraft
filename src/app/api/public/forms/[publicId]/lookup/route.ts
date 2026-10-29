@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { getDropdownOptions, findLookupRecord, LookupServiceError } from '@/lib/lookup/lookupService';
 import { FieldMapping } from '@/lib/lookup/lookupTypes';
+import { getAuthUserFromRequest } from '@/lib/auth/session';
 
 export async function GET(
   request: NextRequest,
@@ -26,6 +27,7 @@ export async function GET(
         status: true,
         settings: {
           select: {
+            requireAuth: true,
             isAcceptingResponses: true,
             startDate: true,
             endDate: true,
@@ -39,6 +41,13 @@ export async function GET(
         { error: 'Form not found or not currently published' },
         { status: 404 }
       );
+    }
+
+    if (form.settings?.requireAuth) {
+      const user = await getAuthUserFromRequest(request);
+      if (!user) {
+        return NextResponse.json({ error: 'Authentication required to query lookup data' }, { status: 401 });
+      }
     }
 
     // 2. Check response acceptance window

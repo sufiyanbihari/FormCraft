@@ -62,6 +62,17 @@ export async function GET(
     let closedReason = '';
 
     if (settings) {
+      if (settings.requireAuth && !user) {
+        return NextResponse.json(
+          {
+            error: 'Authentication required: You must be signed in to access this form.',
+            requireAuth: true,
+            redirectUrl: `/login?redirect=/f/${publicId}`,
+          },
+          { status: 401 }
+        );
+      }
+
       if (!settings.isAcceptingResponses) {
         isClosed = true;
         closedReason = settings.closedMessage || 'This form is no longer accepting responses.';

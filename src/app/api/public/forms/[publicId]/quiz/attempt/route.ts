@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { startQuizAttemptSchema } from '@/lib/validation/quizAttemptSchema';
 import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
 import { reconcileAttemptTimeout } from '@/lib/quiz/quizAttemptService';
+import { getAuthUserFromRequest } from '@/lib/auth/session';
 
 export async function POST(
   request: NextRequest,
@@ -46,6 +47,15 @@ export async function POST(
 
     // Availability validation
     if (settings) {
+      if (settings.requireAuth) {
+        const user = await getAuthUserFromRequest(request);
+        if (!user) {
+          return NextResponse.json(
+            { error: 'Authentication required: You must be signed in to access this quiz.', requireAuth: true },
+            { status: 401 }
+          );
+        }
+      }
       if (!settings.isAcceptingResponses) {
         return NextResponse.json(
           { error: settings.closedMessage || 'This quiz is no longer accepting responses.' },
@@ -241,6 +251,16 @@ export async function GET(
 
     if (!form) {
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
+    }
+
+    if (form.settings?.requireAuth) {
+      const user = await getAuthUserFromRequest(request);
+      if (!user) {
+        return NextResponse.json(
+          { error: 'Authentication required: You must be signed in to access this quiz.', requireAuth: true },
+          { status: 401 }
+        );
+      }
     }
 
     const attempt = attemptId

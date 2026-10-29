@@ -64,6 +64,31 @@ export default function SettingsTab({
       onChangeSettings({ quizRosterMode: 'ROSTER' });
     }
   }, [isQuiz, settings?.quizRosterMode]);
+
+  const isBothTimers = settings?.quizTimerMode === 'BOTH';
+  const durationMinutes =
+    settings?.quizDurationMinutes != null && settings.quizDurationMinutes !== ''
+      ? Number(settings.quizDurationMinutes)
+      : null;
+  const questionLimitSeconds =
+    settings?.quizQuestionTimeLimitSeconds != null && settings.quizQuestionTimeLimitSeconds !== ''
+      ? Number(settings.quizQuestionTimeLimitSeconds)
+      : null;
+
+  let timerValidationError: string | null = null;
+  if (isBothTimers) {
+    if (durationMinutes === null || isNaN(durationMinutes) || durationMinutes <= 0) {
+      timerValidationError = 'Overall quiz duration must be greater than 0 minutes.';
+    } else if (questionLimitSeconds === null || isNaN(questionLimitSeconds) || questionLimitSeconds <= 0) {
+      timerValidationError = 'Per-question time limit must be greater than 0 seconds.';
+    } else {
+      const maxQuestionSeconds = durationMinutes * 60;
+      if (questionLimitSeconds > maxQuestionSeconds) {
+        timerValidationError = `Per-question time limit (${questionLimitSeconds}s) cannot exceed the overall quiz duration (${durationMinutes} min = ${maxQuestionSeconds}s).`;
+      }
+    }
+  }
+
   return (
     <div className="max-w-3xl mx-auto py-6 px-4 space-y-6">
       {/* 1. Quiz Settings */}
@@ -294,7 +319,9 @@ export default function SettingsTab({
                           quizDurationMinutes: e.target.value ? parseInt(e.target.value, 10) : null,
                         })
                       }
-                      className="h-8 text-xs w-28"
+                      className={`h-8 text-xs w-28 ${
+                        isBothTimers && timerValidationError ? 'border-red-500 focus-visible:ring-red-500' : ''
+                      }`}
                     />
                     <span className="text-xs text-gray-500 font-medium">min</span>
                   </div>
@@ -309,7 +336,7 @@ export default function SettingsTab({
                   <div className="flex items-center gap-2">
                     <Input
                       type="number"
-                      min="5"
+                      min="1"
                       max="3600"
                       placeholder="e.g. 60"
                       value={settings?.quizQuestionTimeLimitSeconds ?? ''}
@@ -318,10 +345,22 @@ export default function SettingsTab({
                           quizQuestionTimeLimitSeconds: e.target.value ? parseInt(e.target.value, 10) : null,
                         })
                       }
-                      className="h-8 text-xs w-28"
+                      className={`h-8 text-xs w-28 ${
+                        isBothTimers && timerValidationError ? 'border-red-500 focus-visible:ring-red-500' : ''
+                      }`}
                     />
                     <span className="text-xs text-gray-500 font-medium">sec</span>
                   </div>
+                </div>
+              )}
+
+              {isBothTimers && timerValidationError && (
+                <div
+                  data-testid="timer-validation-error"
+                  className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-300 text-xs flex items-center gap-2 mt-2"
+                >
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-red-500" />
+                  <span>{timerValidationError}</span>
                 </div>
               )}
             </div>
@@ -421,21 +460,6 @@ export default function SettingsTab({
           <div className="py-3 flex items-center justify-between">
             <div>
               <p className="font-semibold text-gray-800 dark:text-gray-200">
-                Collect email addresses
-              </p>
-              <p className="text-gray-500 text-[11px]">
-                Require respondents to provide a valid email before submitting
-              </p>
-            </div>
-            <Switch
-              checked={settings?.collectEmail || false}
-              onCheckedChange={(checked) => onChangeSettings({ collectEmail: checked })}
-            />
-          </div>
-
-          <div className="py-3 flex items-center justify-between">
-            <div>
-              <p className="font-semibold text-gray-800 dark:text-gray-200">
                 Require sign-in
               </p>
               <p className="text-gray-500 text-[11px]">
@@ -473,24 +497,15 @@ export default function SettingsTab({
                     Participant Identification Method
                   </label>
                   <Select
-                    value={settings?.duplicateIdentifierMethod || 'AUTH_USER'}
+                    value="IP_ADDRESS"
                     onValueChange={(val) => {
-                      const updates: any = { duplicateIdentifierMethod: val };
-                      if (val === 'AUTH_USER') updates.requireAuth = true;
-                      if (val === 'VERIFIED_EMAIL') updates.collectEmail = true;
-                      onChangeSettings(updates);
+                      onChangeSettings({ duplicateIdentifierMethod: val });
                     }}
                   >
                     <SelectTrigger className="h-9 text-xs">
-                      <SelectValue placeholder="Select identification method" />
+                      <SelectValue placeholder="Client Device / IP" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="AUTH_USER">
-                        Signed-in Account (Requires login, matches user ID)
-                      </SelectItem>
-                      <SelectItem value="VERIFIED_EMAIL">
-                        Email Address (Requires email collection or login)
-                      </SelectItem>
                       <SelectItem value="IP_ADDRESS">
                         Client Device / IP (Best-effort anonymous protection)
                       </SelectItem>

@@ -161,11 +161,11 @@ export async function POST(
       }
     }
 
-    // Check collectEmail setting
-    if (settings?.collectEmail && !respondentEmail && !authenticatedUser?.email) {
+    // Enforce requireAuth setting
+    if (settings?.requireAuth && !authenticatedUser) {
       return NextResponse.json(
-        { error: 'Email address is required to submit this form.' },
-        { status: 400 }
+        { error: 'Authentication required: You must be signed in to submit this form.' },
+        { status: 401 }
       );
     }
 

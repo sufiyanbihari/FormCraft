@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { finalizeQuizAttemptSchema } from '@/lib/validation/quizAttemptSchema';
 import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
 import { finalizeAttemptInTx } from '@/lib/quiz/quizAttemptService';
+import { getAuthUserFromRequest } from '@/lib/auth/session';
 
 export async function POST(
   request: NextRequest,
@@ -41,6 +42,18 @@ export async function POST(
 
     if (!form || !form.isQuiz) {
       return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
+    }
+
+    const user = await getAuthUserFromRequest(request);
+    if (form.settings?.requireAuth && !user) {
+      return NextResponse.json(
+        {
+          error: 'Authentication required: You must be signed in to submit this quiz.',
+          requireAuth: true,
+          redirectUrl: `/login?redirect=/f/${publicId}`,
+        },
+        { status: 401 }
+      );
     }
 
     const attempt = await prisma.quizAttempt.findUnique({

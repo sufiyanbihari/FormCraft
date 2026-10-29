@@ -239,10 +239,19 @@ function PublicFormContent() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (res.status === 401 || data.requireAuth) {
+          const redirectTarget = data.redirectUrl || `/login?redirect=/f/${publicId}`;
+          window.location.href = redirectTarget;
+          return;
+        }
         setIsClosed(true);
         setClosedReason(data.error || 'This form does not exist or has not been published.');
       } else {
         let loadedForm = data.form;
+        if (loadedForm?.settings?.requireAuth && !data.isAuthenticated) {
+          window.location.href = `/login?redirect=/f/${publicId}`;
+          return;
+        }
         if (loadedForm?.settings?.shuffleQuestions && loadedForm.sections) {
           loadedForm = {
             ...loadedForm,
@@ -857,18 +866,6 @@ function PublicFormContent() {
   };
 
   const validateCattleSurvey = () => {
-    if (formData?.settings?.collectEmail) {
-      const cleanEmail = respondentEmail.trim();
-      if (!cleanEmail) {
-        setValidationError('Please enter your email address to continue.');
-        return false;
-      }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-        setValidationError('Please enter a valid email address.');
-        return false;
-      }
-    }
-
     if (formData?.settings?.requireAuth && !isAuthenticated) {
       setValidationError('Sign-in required: You must be signed in to submit this form.');
       return false;
@@ -957,19 +954,6 @@ function PublicFormContent() {
 
   // Validate required questions and formats in current section before moving forward
   const validateCurrentSection = () => {
-    // If collectEmail is enabled, require valid email address
-    if (formData?.settings?.collectEmail) {
-      const cleanEmail = respondentEmail.trim();
-      if (!cleanEmail) {
-        setValidationError('Please enter your email address to continue.');
-        return false;
-      }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-        setValidationError('Please enter a valid email address.');
-        return false;
-      }
-    }
-
     // If requireAuth is enabled and user is not signed in
     if (formData?.settings?.requireAuth && !isAuthenticated) {
       setValidationError('Sign-in required: You must be signed in to submit this form.');
@@ -1574,6 +1558,32 @@ function PublicFormContent() {
     );
   }
 
+  if (formData.settings?.requireAuth && !isAuthenticated) {
+    return (
+      <div
+        className="min-h-screen py-10 pb-20 px-4 transition-colors flex items-center justify-center"
+        style={{
+          backgroundColor: effectiveBg,
+          fontFamily: theme.fontFamily || 'Inter',
+        }}
+      >
+        <div className="max-w-md w-full bg-white dark:bg-gray-900 p-8 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800 text-center space-y-4">
+          <ShieldCheck className="h-12 w-12 text-amber-600 mx-auto" />
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Sign-in Required</h1>
+          <p className="text-sm text-gray-500">
+            You must be signed in with a FormCraft account to access and submit this form.
+          </p>
+          <a
+            href={`/login?redirect=/f/${publicId}`}
+            className="inline-flex items-center justify-center w-full px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl transition-colors shadow-sm"
+          >
+            Sign In to Continue
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="min-h-screen py-10 pb-20 px-4 transition-colors"
@@ -1728,61 +1738,7 @@ function PublicFormContent() {
           </div>
         </div>
 
-        {/* Require Sign-in Notice Banner */}
-        {formData.settings?.requireAuth && !isAuthenticated && (
-          <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm">
-            <div className="flex items-center gap-2.5 text-amber-800 dark:text-amber-200">
-              <ShieldCheck className="h-5 w-5 shrink-0 text-amber-600" />
-              <div>
-                <p className="font-bold text-sm">Sign-in Required</p>
-                <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80 mt-0.5">
-                  You must be signed in with a FormCraft account to submit this form.
-                </p>
-              </div>
-            </div>
-            <a
-              href={`/login?redirect=/f/${publicId}`}
-              className="inline-flex items-center justify-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg shrink-0 transition-colors shadow-sm"
-            >
-              Sign In to Continue
-            </a>
-          </div>
-        )}
 
-        {/* Email Collection Card */}
-        {formData.settings?.collectEmail && (
-          <div
-            className={`bg-white dark:bg-gray-900 p-6 border border-gray-200 dark:border-gray-800 shadow-sm space-y-3 ${
-              theme.borderRadius || 'rounded-2xl'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
-                <Mail className="h-4 w-4 text-purple-600" />
-                <span>Email address</span>
-                <span className="text-red-500 font-bold">*</span>
-              </label>
-              {currentUserEmail && (
-                <span className="text-[11px] text-gray-400">
-                  Signed in as {currentUserEmail}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-gray-500">
-              The form owner requires a valid email address with your response.
-            </p>
-            <Input
-              type="email"
-              placeholder="your.email@example.com"
-              value={respondentEmail}
-              onChange={(e) => {
-                setRespondentEmail(e.target.value);
-                setValidationError(null);
-              }}
-              className="h-10 text-sm max-w-md"
-            />
-          </div>
-        )}
 
         {/* Validation Error Banner */}
         {validationError && (
