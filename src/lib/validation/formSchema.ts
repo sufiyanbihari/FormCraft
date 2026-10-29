@@ -13,15 +13,13 @@ export const formThemeSchema = z.object({
 export const rawFormSettingsShape = {
   isAcceptingResponses: z.boolean().optional(),
   startDate: z
-    .string()
-    .nullable()
+    .union([z.string(), z.date(), z.null()])
     .optional()
-    .transform((v) => (!v ? null : new Date(v).toISOString())),
+    .transform((v) => (v === undefined ? undefined : !v ? null : new Date(v).toISOString())),
   endDate: z
-    .string()
-    .nullable()
+    .union([z.string(), z.date(), z.null()])
     .optional()
-    .transform((v) => (!v ? null : new Date(v).toISOString())),
+    .transform((v) => (v === undefined ? undefined : !v ? null : new Date(v).toISOString())),
   maxResponses: z
     .union([z.number().int().positive(), z.null(), z.literal('')])
     .optional()
@@ -80,8 +78,7 @@ export const rawFormSettingsShape = {
     .optional()
     .transform((v) => (v === undefined ? undefined : v === '' || v === null ? null : Number(v))),
   editingDeadline: z
-    .string()
-    .nullable()
+    .union([z.string(), z.date(), z.null()])
     .optional()
     .transform((v) => (v === undefined ? undefined : !v ? null : new Date(v).toISOString())),
 };
@@ -171,7 +168,7 @@ export const updateFormSchema = z.object({
   description: z.string().max(2000).optional(),
   status: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED', 'TRASHED']).optional(),
   isQuiz: z.boolean().optional(),
-  theme: formThemeSchema.partial().optional(),
+  theme: formThemeSchema.partial().nullable().optional(),
   settings: partialFormSettingsSchema.optional(),
 });
 

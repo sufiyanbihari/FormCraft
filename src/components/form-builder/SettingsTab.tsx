@@ -497,7 +497,7 @@ export default function SettingsTab({
                     Participant Identification Method
                   </label>
                   <Select
-                    value="IP_ADDRESS"
+                    value={settings?.duplicateIdentifierMethod || 'IP_ADDRESS'}
                     onValueChange={(val) => {
                       onChangeSettings({ duplicateIdentifierMethod: val });
                     }}

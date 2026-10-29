@@ -163,7 +163,12 @@ function FormBuilderContent() {
       setDescription(f.description || '');
       setIsQuiz(f.isQuiz);
       if (f.theme) setTheme(f.theme);
-      if (f.settings) setSettings(f.settings);
+      if (f.settings) {
+        setSettings({
+          ...f.settings,
+          duplicateIdentifierMethod: 'IP_ADDRESS',
+        });
+      }
       if (f.lookupMappings) setLookupMappings(f.lookupMappings);
 
       // Extract sections and questions
@@ -301,7 +306,7 @@ function FormBuilderContent() {
   const saveFormToServer = useCallback(async () => {
     if (!formId || isLoading || !form) return;
 
-    if (settings?.quizTimerMode === 'BOTH') {
+    if (isQuiz && settings?.quizTimerMode === 'BOTH') {
       const durMin = Number(settings.quizDurationMinutes || 0);
       const qSec = Number(settings.quizQuestionTimeLimitSeconds || 0);
       if (durMin <= 0 || qSec <= 0 || qSec > durMin * 60) {
@@ -319,8 +324,13 @@ function FormBuilderContent() {
           title: (title || '').trim() || 'Untitled form',
           description,
           isQuiz,
-          theme,
-          settings,
+          theme: theme || undefined,
+          settings: settings
+            ? {
+                ...settings,
+                duplicateIdentifierMethod: 'IP_ADDRESS',
+              }
+            : undefined,
         }),
       });
 
@@ -664,6 +674,7 @@ function FormBuilderContent() {
           settings: {
             ...settings,
             quizDefaultPoints: configuredDefault,
+            duplicateIdentifierMethod: 'IP_ADDRESS',
           },
         }),
       });
@@ -675,7 +686,11 @@ function FormBuilderContent() {
   // Synchronized Settings Change Handler for Quiz Default Points & Form Settings
   const handleSettingsChange = useCallback(
     (delta: any) => {
-      const newSettings = { ...settings, ...delta };
+      const newSettings = {
+        ...settings,
+        ...delta,
+        duplicateIdentifierMethod: 'IP_ADDRESS',
+      };
       setSettings(newSettings);
 
       const hasDefaultPointsChange =

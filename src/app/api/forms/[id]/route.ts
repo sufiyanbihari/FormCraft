@@ -88,6 +88,10 @@ export async function GET(
       return NextResponse.json({ error: 'Form not found' }, { status: 404 });
     }
 
+    if (form.settings && form.settings.duplicateIdentifierMethod !== 'IP_ADDRESS') {
+      form.settings.duplicateIdentifierMethod = 'IP_ADDRESS';
+    }
+
     return NextResponse.json({ form, userRole: role });
   } catch (error) {
     console.error('Failed to get form:', error);
@@ -115,6 +119,12 @@ export async function PATCH(
     }
 
     const body = await request.json();
+
+    // Handle legacy QUESTION_FIELD duplicateIdentifierMethod from existing forms safely
+    if (body?.settings?.duplicateIdentifierMethod === 'QUESTION_FIELD') {
+      body.settings.duplicateIdentifierMethod = 'IP_ADDRESS';
+    }
+
     const result = updateFormSchema.safeParse(body);
 
     if (!result.success) {
@@ -158,14 +168,16 @@ export async function PATCH(
       let defaultPointsChanged = false;
       let newDefaultPointsValue = 1;
 
+      const effectiveIsQuiz = isQuiz !== undefined ? isQuiz : form.isQuiz;
+
       if (settings) {
         const previousSettings = await tx.formSettings.findUnique({
           where: { formId: id },
         });
 
-        // Cross-field validation for Both Timers mode
+        // Cross-field validation for Both Timers mode (only when quiz mode is enabled)
         const effectiveTimerMode = settings.quizTimerMode !== undefined ? settings.quizTimerMode : previousSettings?.quizTimerMode;
-        if (effectiveTimerMode === 'BOTH') {
+        if (effectiveIsQuiz && effectiveTimerMode === 'BOTH') {
           const effectiveDurationMin = settings.quizDurationMinutes !== undefined ? settings.quizDurationMinutes : previousSettings?.quizDurationMinutes;
           const effectiveQuestionSec = settings.quizQuestionTimeLimitSeconds !== undefined ? settings.quizQuestionTimeLimitSeconds : previousSettings?.quizQuestionTimeLimitSeconds;
 
@@ -203,7 +215,6 @@ export async function PATCH(
         });
       }
 
-      const effectiveIsQuiz = isQuiz !== undefined ? isQuiz : form.isQuiz;
       const turningQuizOn = !form.isQuiz && effectiveIsQuiz;
 
       // When the Default Points per Question setting changes, update all existing questions to the new default

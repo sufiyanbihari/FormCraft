@@ -6,7 +6,7 @@ let ensuringPromise: Promise<void> | null = null;
 const MIGRATION_STATEMENTS = [
   // FormSettings: Configurable Duplicate Response Prevention
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "duplicateIdentifierMethod" TEXT DEFAULT 'IP_ADDRESS'`,
-  `UPDATE "form_settings" SET "duplicateIdentifierMethod" = 'IP_ADDRESS' WHERE "duplicateIdentifierMethod" IN ('AUTH_USER', 'VERIFIED_EMAIL')`,
+  `UPDATE "form_settings" SET "duplicateIdentifierMethod" = 'IP_ADDRESS' WHERE "duplicateIdentifierMethod" IS NULL OR "duplicateIdentifierMethod" != 'IP_ADDRESS'`,
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "duplicateIdentifierQuestionId" TEXT`,
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "duplicateRestrictionScope" TEXT DEFAULT 'ONCE_PER_FORM'`,
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "duplicateRestrictionPeriod" TEXT DEFAULT 'DAILY'`,
