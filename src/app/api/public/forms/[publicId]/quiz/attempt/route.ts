@@ -199,6 +199,8 @@ export async function POST(
       },
       navigationPolicy: settings?.quizNavigationPolicy || 'BACKWARD_ENABLED',
       timerMode: settings?.quizTimerMode || 'NONE',
+      allowResponseEditing: Boolean(settings?.allowResponseEditing),
+      restrictOneResponse: Boolean(settings?.restrictOneResponse),
       serverTime: new Date().toISOString(),
     });
   } catch (error) {
@@ -282,6 +284,8 @@ export async function GET(
       },
       navigationPolicy: form.settings?.quizNavigationPolicy || 'BACKWARD_ENABLED',
       timerMode: form.settings?.quizTimerMode || 'NONE',
+      allowResponseEditing: Boolean(form.settings?.allowResponseEditing),
+      restrictOneResponse: Boolean(form.settings?.restrictOneResponse),
       serverTime: new Date().toISOString(),
     });
   } catch (error) {

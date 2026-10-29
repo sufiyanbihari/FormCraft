@@ -299,6 +299,8 @@ function PublicFormContent() {
                           ? 'Time expired. Your quiz attempt was automatically submitted and scored.'
                           : 'Your quiz response has been recorded.',
                       isGradeReleased: true,
+                      allowResponseEditing: attData.allowResponseEditing,
+                      restrictOneResponse: attData.restrictOneResponse,
                       score: {
                         total: attData.attempt.earnedScore,
                         max: attData.attempt.maxScore,
@@ -372,6 +374,8 @@ function PublicFormContent() {
               ? 'Time expired. Your quiz attempt was automatically submitted and scored.'
               : 'Your quiz response has been recorded.',
           isGradeReleased: true,
+          allowResponseEditing: data.allowResponseEditing,
+          restrictOneResponse: data.restrictOneResponse,
           score: {
             total: data.attempt.earnedScore,
             max: data.attempt.maxScore,
@@ -1313,6 +1317,18 @@ function PublicFormContent() {
 
   // Submitted Success Screen
   if (isSubmitted) {
+    const isResponseEditingAllowed = Boolean(
+      submissionResult?.allowResponseEditing !== undefined
+        ? submissionResult.allowResponseEditing
+        : formData?.settings?.allowResponseEditing
+    );
+
+    const isOneResponseRestricted = Boolean(
+      submissionResult?.restrictOneResponse !== undefined
+        ? submissionResult.restrictOneResponse
+        : formData?.settings?.restrictOneResponse
+    );
+
     const effectiveBg =
       theme.backgroundColor && theme.backgroundColor !== '#f0ebf8'
         ? theme.backgroundColor
@@ -1429,7 +1445,7 @@ function PublicFormContent() {
           )}
 
           {/* Controlled Response Editing Button */}
-          {submissionResult?.editToken && formData?.settings?.allowResponseEditing && (
+          {submissionResult?.editToken && isResponseEditingAllowed && (
             <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-2">
               <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                 <Button
@@ -1463,8 +1479,8 @@ function PublicFormContent() {
             </div>
           )}
 
-          {/* Link to submit another response if duplicate prevention is not active */}
-          {!formData?.settings?.restrictOneResponse && (
+          {/* Link to submit another response only when response editing is allowed and duplicate prevention is not active */}
+          {isResponseEditingAllowed && !isOneResponseRestricted && (
             <Button
               variant="outline"
               size="sm"

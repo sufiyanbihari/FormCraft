@@ -600,6 +600,8 @@ export async function POST(
         : 'Your response has been recorded. Grades will be released after manual review.',
       submissionId: submission.id,
       editToken: settings?.allowResponseEditing ? submission.editToken : undefined,
+      allowResponseEditing: Boolean(settings?.allowResponseEditing),
+      restrictOneResponse: Boolean(settings?.restrictOneResponse),
       isGradeReleased: form.isQuiz ? isGradeReleased : true,
       score: quizResult,
     });

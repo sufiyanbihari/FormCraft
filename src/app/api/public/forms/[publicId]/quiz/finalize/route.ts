@@ -126,6 +126,8 @@ export async function POST(
         durationSeconds: finalized.durationSeconds,
         submissionId: finalized.submissionId,
       },
+      allowResponseEditing: Boolean(settings?.allowResponseEditing),
+      restrictOneResponse: Boolean(settings?.restrictOneResponse),
       isGradeReleased: isImmediate,
       score: scoreResult,
     });
