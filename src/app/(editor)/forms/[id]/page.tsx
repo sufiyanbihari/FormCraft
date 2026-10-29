@@ -237,6 +237,8 @@ function FormBuilderContent() {
   const pendingQuestionDeltasRef = useRef<Record<string, Partial<QuestionData>>>({});
   const questionSaveTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
   const activeQuestionSavesCountRef = useRef<number>(0);
+  const latestDefaultPointsReqIdRef = useRef<number>(0);
+  const defaultPointsSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const saveQuestionDeltaToServer = useCallback(
     async (qId: string, delta: Partial<QuestionData>) => {
@@ -289,6 +291,9 @@ function FormBuilderContent() {
     return () => {
       for (const qId of Object.keys(questionSaveTimersRef.current)) {
         clearTimeout(questionSaveTimersRef.current[qId]);
+      }
+      if (defaultPointsSaveTimerRef.current) {
+        clearTimeout(defaultPointsSaveTimerRef.current);
       }
     };
   }, []);
@@ -620,7 +625,6 @@ function FormBuilderContent() {
           q.type === 'VIDEO_EMBED';
         if (!isPresentation && (q.quizPoints === 0 || q.quizPoints === undefined || q.quizPoints === null)) {
           hasChanges = true;
-          saveQuestionDeltaToServer(q.id, { quizPoints: configuredDefault });
           return { ...q, quizPoints: configuredDefault };
         }
         return q;
@@ -657,6 +661,96 @@ function FormBuilderContent() {
       console.error('Failed to update quiz toggle:', err);
     }
   };
+
+  // Synchronized Settings Change Handler for Quiz Default Points & Form Settings
+  const handleSettingsChange = useCallback(
+    (delta: any) => {
+      const newSettings = { ...settings, ...delta };
+      setSettings(newSettings);
+
+      const hasDefaultPointsChange =
+        delta.quizDefaultPoints !== undefined &&
+        delta.quizDefaultPoints !== null &&
+        Number(delta.quizDefaultPoints) !== Number(settings?.quizDefaultPoints);
+
+      if (hasDefaultPointsChange) {
+        const newDefault = Math.max(0, parseInt(delta.quizDefaultPoints, 10) || 0);
+
+        // 1. Purge any pending individual question saves for quizPoints
+        for (const qId of Object.keys(pendingQuestionDeltasRef.current)) {
+          if (pendingQuestionDeltasRef.current[qId]?.quizPoints !== undefined) {
+            delete pendingQuestionDeltasRef.current[qId].quizPoints;
+            if (Object.keys(pendingQuestionDeltasRef.current[qId]).length === 0) {
+              if (questionSaveTimersRef.current[qId]) {
+                clearTimeout(questionSaveTimersRef.current[qId]);
+                delete questionSaveTimersRef.current[qId];
+              }
+              delete pendingQuestionDeltasRef.current[qId];
+            }
+          }
+        }
+
+        // 2. Synchronize all gradable questions in React state immediately
+        const updatedQuestions = questions.map((q) => {
+          const isPresentation =
+            q.type === 'SECTION_HEADER' ||
+            q.type === 'TEXT_BLOCK' ||
+            q.type === 'IMAGE_BLOCK' ||
+            q.type === 'VIDEO_EMBED';
+          if (!isPresentation) {
+            return { ...q, quizPoints: newDefault };
+          }
+          return q;
+        });
+
+        setQuestions(updatedQuestions);
+
+        // 3. Update history
+        updateHistory({
+          title,
+          description,
+          sections,
+          questions: updatedQuestions,
+          theme,
+          settings: newSettings,
+          isQuiz,
+        });
+
+        // 4. Save to server with request ID sequencing
+        const reqId = ++latestDefaultPointsReqIdRef.current;
+        setSaveStatus('saving');
+
+        if (defaultPointsSaveTimerRef.current) {
+          clearTimeout(defaultPointsSaveTimerRef.current);
+        }
+
+        defaultPointsSaveTimerRef.current = setTimeout(async () => {
+          try {
+            const res = await fetch(`/api/forms/${formId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                settings: newSettings,
+              }),
+            });
+
+            if (reqId === latestDefaultPointsReqIdRef.current) {
+              if (res.ok) {
+                setSaveStatus('saved');
+              } else {
+                setSaveStatus('error');
+              }
+            }
+          } catch {
+            if (reqId === latestDefaultPointsReqIdRef.current) {
+              setSaveStatus('error');
+            }
+          }
+        }, 250);
+      }
+    },
+    [settings, questions, title, description, sections, theme, isQuiz, formId, updateHistory]
+  );
 
   // Import Questions Success Handler
   const handleImportSuccess = (
@@ -746,6 +840,10 @@ function FormBuilderContent() {
       if (saveTimeout.current) {
         clearTimeout(saveTimeout.current);
         saveTimeout.current = null;
+      }
+      if (defaultPointsSaveTimerRef.current) {
+        clearTimeout(defaultPointsSaveTimerRef.current);
+        defaultPointsSaveTimerRef.current = null;
       }
       setSaveStatus('saving');
 
@@ -992,7 +1090,7 @@ function FormBuilderContent() {
             isQuiz={isQuiz}
             onToggleQuiz={handleToggleQuiz}
             settings={settings}
-            onChangeSettings={(delta) => setSettings((prev: any) => ({ ...prev, ...delta }))}
+            onChangeSettings={handleSettingsChange}
             primaryColor={theme.primaryColor}
             questions={questions}
             formId={form.id}

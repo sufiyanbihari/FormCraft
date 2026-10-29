@@ -56,6 +56,7 @@ export async function POST(
     const targetForm = await prisma.form.findUnique({
       where: { id: targetFormId },
       include: {
+        settings: true,
         sections: {
           orderBy: { orderIndex: 'asc' },
         },
@@ -132,6 +133,16 @@ export async function POST(
             );
           }
 
+          const isPresentation =
+            srcQ.type === 'SECTION_HEADER' ||
+            srcQ.type === 'TEXT_BLOCK' ||
+            srcQ.type === 'IMAGE_BLOCK' ||
+            srcQ.type === 'VIDEO_EMBED';
+          const targetQuizDefault =
+            targetForm.isQuiz && !isPresentation ? targetForm.settings?.quizDefaultPoints ?? 1 : 0;
+          const assignedQuizPoints =
+            srcQ.quizPoints !== undefined && srcQ.quizPoints > 0 ? srcQ.quizPoints : targetQuizDefault;
+
           const newQuestion = await tx.formQuestion.create({
             data: {
               formId: targetFormId,
@@ -143,7 +154,7 @@ export async function POST(
               isRequired: srcQ.isRequired,
               validation: srcQ.validation ? JSON.parse(JSON.stringify(srcQ.validation)) : {},
               config: cleanConfig,
-              quizPoints: srcQ.quizPoints || 0,
+              quizPoints: assignedQuizPoints,
               quizAnswer: srcQ.quizAnswer ? JSON.parse(JSON.stringify(srcQ.quizAnswer)) : {},
               quizExplanation: srcQ.quizExplanation || '',
             },
@@ -229,6 +240,16 @@ export async function POST(
             );
           }
 
+          const isPresentation =
+            srcQ.type === 'SECTION_HEADER' ||
+            srcQ.type === 'TEXT_BLOCK' ||
+            srcQ.type === 'IMAGE_BLOCK' ||
+            srcQ.type === 'VIDEO_EMBED';
+          const targetQuizDefault =
+            targetForm.isQuiz && !isPresentation ? targetForm.settings?.quizDefaultPoints ?? 1 : 0;
+          const assignedQuizPoints =
+            srcQ.quizPoints !== undefined && srcQ.quizPoints > 0 ? srcQ.quizPoints : targetQuizDefault;
+
           const newQuestion = await tx.formQuestion.create({
             data: {
               formId: targetFormId,
@@ -240,7 +261,7 @@ export async function POST(
               isRequired: srcQ.isRequired,
               validation: srcQ.validation ? JSON.parse(JSON.stringify(srcQ.validation)) : {},
               config: cleanConfig,
-              quizPoints: srcQ.quizPoints || 0,
+              quizPoints: assignedQuizPoints,
               quizAnswer: srcQ.quizAnswer ? JSON.parse(JSON.stringify(srcQ.quizAnswer)) : {},
               quizExplanation: srcQ.quizExplanation || '',
             },

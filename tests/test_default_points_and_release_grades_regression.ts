@@ -157,30 +157,54 @@ async function runRegressionSuite() {
   console.log('✓ Subsequently created question after default change received 5 points.');
 
   // --------------------------------------------------------------------------
-  // TEST 4: Changing default does NOT overwrite existing questions' manually assigned points
+  // TEST 4: Changing default updates existing questions to the new default
   // --------------------------------------------------------------------------
-  console.log('\n--- Test 4: Existing questions preserve points when default changes ---');
-  // Question 1 has 1 point, let's manually assign addQ1 to 10 points
+  console.log('\n--- Test 4: Changing default updates existing questions to the new default ---');
+  // In Test 3, changing default to 5 updated existing questions to 5
+  const q1After5 = await prisma.formQuestion.findUnique({ where: { id: quizQuestions[0].id } });
+  assert.strictEqual(q1After5?.quizPoints, 5, 'Question 1 must be updated to 5 when default changed to 5');
+
+  // Change default to 8 via updateFormHandler
+  const changeTo8Req = new NextRequest(`http://localhost:3000/api/forms/${quizId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      settings: { quizDefaultPoints: 8 },
+    }),
+  });
+  changeTo8Req.cookies.set(SESSION_COOKIE_NAME, authToken);
+  await updateFormHandler(changeTo8Req, { params: Promise.resolve({ id: quizId }) });
+
+  // Verify all questions are updated to 8
+  const q1After8 = await prisma.formQuestion.findUnique({ where: { id: quizQuestions[0].id } });
+  const addQ1After8 = await prisma.formQuestion.findUnique({ where: { id: addQ1Data.question.id } });
+  const addQ2After8 = await prisma.formQuestion.findUnique({ where: { id: addQ2Data.question.id } });
+
+  assert.strictEqual(q1After8?.quizPoints, 8, 'Question 1 must be updated to 8');
+  assert.strictEqual(addQ1After8?.quizPoints, 8, 'addQ1 must be updated to 8');
+  assert.strictEqual(addQ2After8?.quizPoints, 8, 'addQ2 must be updated to 8');
+
+  // Manually customize addQ1 to 10 points
   await prisma.formQuestion.update({
     where: { id: addQ1Data.question.id },
     data: { quizPoints: 10 },
   });
 
-  // Change default to 8
-  await prisma.formSettings.update({
-    where: { formId: quizId },
-    data: { quizDefaultPoints: 8 },
+  // Subsequent form update with same default (8) preserves customization
+  const sameDefaultReq = new NextRequest(`http://localhost:3000/api/forms/${quizId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Updated Title',
+      settings: { quizDefaultPoints: 8 },
+    }),
   });
+  sameDefaultReq.cookies.set(SESSION_COOKIE_NAME, authToken);
+  await updateFormHandler(sameDefaultReq, { params: Promise.resolve({ id: quizId }) });
 
-  // Verify Question 1 (1 pt), addQ1 (10 pts), addQ2 (5 pts) are untouched
-  const q1Fresh = await prisma.formQuestion.findUnique({ where: { id: quizQuestions[0].id } });
-  const addQ1Fresh = await prisma.formQuestion.findUnique({ where: { id: addQ1Data.question.id } });
-  const addQ2Fresh = await prisma.formQuestion.findUnique({ where: { id: addQ2Data.question.id } });
-
-  assert.strictEqual(q1Fresh?.quizPoints, 1, 'Question 1 must preserve its points (1)');
-  assert.strictEqual(addQ1Fresh?.quizPoints, 10, 'Manually assigned points (10) must be preserved');
-  assert.strictEqual(addQ2Fresh?.quizPoints, 5, 'Previous question with 5 points must be preserved');
-  console.log('✓ All existing questions preserved their points when default changed to 8.');
+  const addQ1Preserved = await prisma.formQuestion.findUnique({ where: { id: addQ1Data.question.id } });
+  assert.strictEqual(addQ1Preserved?.quizPoints, 10, 'Individual customization (10) must be preserved when default does not change');
+  console.log('✓ Changing default updated all existing questions, and individual customizations are preserved until default changes.');
 
   // --------------------------------------------------------------------------
   // TEST 5: Verify Release Grades section is completely absent from SettingsTab.tsx
@@ -238,6 +262,12 @@ async function runRegressionSuite() {
     data: {
       quizPoints: 10,
       quizAnswer: { correctValue: 'Option 1' },
+    },
+  });
+  await prisma.formQuestion.update({
+    where: { id: addQ2Data.question.id },
+    data: {
+      quizPoints: 5,
     },
   });
   await prisma.form.update({

@@ -155,13 +155,65 @@ export async function PATCH(
         });
       }
 
+      let defaultPointsChanged = false;
+      let newDefaultPointsValue = 1;
+
       if (settings) {
+        const previousSettings = await tx.formSettings.findUnique({
+          where: { formId: id },
+          select: { quizDefaultPoints: true },
+        });
+
+        if (
+          settings.quizDefaultPoints !== undefined &&
+          settings.quizDefaultPoints !== null &&
+          settings.quizDefaultPoints !== previousSettings?.quizDefaultPoints
+        ) {
+          defaultPointsChanged = true;
+          newDefaultPointsValue = settings.quizDefaultPoints;
+        }
+
         await tx.formSettings.upsert({
           where: { formId: id },
           update: settings,
           create: {
             formId: id,
             ...settings,
+          },
+        });
+      }
+
+      const effectiveIsQuiz = isQuiz !== undefined ? isQuiz : form.isQuiz;
+      const turningQuizOn = !form.isQuiz && effectiveIsQuiz;
+
+      // When the Default Points per Question setting changes, update all existing questions to the new default
+      if (effectiveIsQuiz && defaultPointsChanged) {
+        await tx.formQuestion.updateMany({
+          where: {
+            formId: id,
+            type: {
+              notIn: ['SECTION_HEADER', 'TEXT_BLOCK', 'IMAGE_BLOCK', 'VIDEO_EMBED'],
+            },
+          },
+          data: {
+            quizPoints: newDefaultPointsValue,
+          },
+        });
+      } else if (effectiveIsQuiz && turningQuizOn) {
+        // When converting to quiz without explicitly changing default points, initialize 0-pt questions
+        const currentDef =
+          (await tx.formSettings.findUnique({ where: { formId: id }, select: { quizDefaultPoints: true } }))
+            ?.quizDefaultPoints ?? 1;
+        await tx.formQuestion.updateMany({
+          where: {
+            formId: id,
+            type: {
+              notIn: ['SECTION_HEADER', 'TEXT_BLOCK', 'IMAGE_BLOCK', 'VIDEO_EMBED'],
+            },
+            quizPoints: 0,
+          },
+          data: {
+            quizPoints: currentDef,
           },
         });
       }
@@ -176,7 +228,12 @@ export async function PATCH(
         },
       });
 
-      return form;
+      const reloadedForm = await tx.form.findUnique({
+        where: { id },
+        include: { settings: true, theme: true },
+      });
+
+      return reloadedForm || form;
     });
 
     const isClosed = settings && settings.isAcceptingResponses === false;
