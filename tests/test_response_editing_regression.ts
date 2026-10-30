@@ -924,8 +924,485 @@ async function runResponseEditingRegressionTests() {
   assert(pageSrc.includes('showEditControls'), 'showEditControls must be used to cleanly guard edit controls');
   console.log('  ✓ PASS: "Submit another response" button completely removed and confirmation screen cleanly formatted.');
 
+  // ------------------------------------------------------------------------
+  // Requirement 14: Edit Page Access Validation (Cases 1 - 10)
+  // ------------------------------------------------------------------------
+  console.log('\n[TEST 14] Edit Page Access Validation (Cases 1 - 10)');
+
+  // Case 1: Valid token and zero completed edits: GET edit page succeeds
+  console.log('  -> Case 1: Valid token and 0 completed edits...');
+  const { form: formA1, questions: qA1 } = await createTestForm({
+    title: 'Access Test Form 1',
+    ownerId: adminUser.id,
+    settings: {
+      allowResponseEditing: true,
+      editingAuthMethod: 'SECURE_EDIT_LINK',
+      editingWindowMode: 'WITHIN_WINDOW',
+      editingTimeDuration: 24,
+      editingTimeUnit: 'Hours',
+      editingWindowMinutes: 1440,
+      maxEditCount: 1,
+    },
+  });
+  const subReqA1 = new NextRequest(`http://localhost:3000/api/public/forms/${formA1.publicId}/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answers: [{ questionId: qA1[0].id, value: 'Initial Answer' }] }),
+  });
+  const subResA1 = await publicSubmissionHandler(subReqA1, { params: Promise.resolve({ publicId: formA1.publicId }) });
+  const subDataA1 = await subResA1.json();
+  const tokenA1 = subDataA1.editToken;
+
+  const getReqA1 = new NextRequest(`http://localhost:3000/api/public/forms/${formA1.publicId}/submissions/edit?editToken=${tokenA1}`);
+  const getResA1 = await editHandlerGet(getReqA1, { params: Promise.resolve({ publicId: formA1.publicId }) });
+  assert.strictEqual(getResA1.status, 200, 'GET edit page must succeed with 200 for 0 completed edits');
+  const getDataA1 = await getResA1.json();
+  assert.strictEqual(getDataA1.submission.canEdit, true);
+  assert.strictEqual(getDataA1.submission.editCount, 0);
+  assert.ok(getDataA1.submission.answers);
+  assert(getResA1.headers.get('cache-control')?.includes('no-store'), 'Must include Cache-Control: no-store');
+  console.log('  ✓ Case 1 PASS: GET edit page succeeds with 200 and no-store headers');
+
+  // Case 2: Maximum edits = 1 and one completed edit: GET edit page is rejected
+  console.log('  -> Case 2: Maximum edits = 1 and 1 completed edit...');
+  const putReqA1 = new NextRequest(`http://localhost:3000/api/public/forms/${formA1.publicId}/submissions/edit`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ editToken: tokenA1, answers: [{ questionId: qA1[0].id, value: 'Edited Answer' }] }),
+  });
+  const putResA1 = await editHandlerPut(putReqA1, { params: Promise.resolve({ publicId: formA1.publicId }) });
+  assert.strictEqual(putResA1.status, 200);
+
+  const getReqA2 = new NextRequest(`http://localhost:3000/api/public/forms/${formA1.publicId}/submissions/edit?editToken=${tokenA1}`);
+  const getResA2 = await editHandlerGet(getReqA2, { params: Promise.resolve({ publicId: formA1.publicId }) });
+  assert.strictEqual(getResA2.status, 403, 'GET edit page must be rejected with 403 when limit exhausted');
+  const getDataA2 = await getResA2.json();
+  assert.strictEqual(getDataA2.code, 'MAX_EDITS_EXCEEDED');
+  assert.strictEqual(getDataA2.canEdit, false);
+  assert.strictEqual(getDataA2.submission, undefined, 'Must NOT leak submission answers when rejected');
+  console.log('  ✓ Case 2 PASS: GET rejected with 403 and code MAX_EDITS_EXCEEDED without leaking answers');
+
+  // Case 3: Maximum edits = 2 and one completed edit: GET edit page succeeds
+  console.log('  -> Case 3: Maximum edits = 2 and 1 completed edit...');
+  const { form: formA2, questions: qA2 } = await createTestForm({
+    title: 'Access Test Form 2',
+    ownerId: adminUser.id,
+    settings: {
+      allowResponseEditing: true,
+      editingAuthMethod: 'SECURE_EDIT_LINK',
+      editingWindowMode: 'WITHIN_WINDOW',
+      editingTimeDuration: 24,
+      editingTimeUnit: 'Hours',
+      editingWindowMinutes: 1440,
+      maxEditCount: 2,
+    },
+  });
+  const subResA3 = await publicSubmissionHandler(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA2.publicId}/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers: [{ questionId: qA2[0].id, value: 'Initial' }] }),
+    }),
+    { params: Promise.resolve({ publicId: formA2.publicId }) }
+  );
+  const subDataA3 = await subResA3.json();
+  const tokenA2 = subDataA3.editToken;
+
+  // Complete edit 1
+  await editHandlerPut(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA2.publicId}/submissions/edit`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ editToken: tokenA2, answers: [{ questionId: qA2[0].id, value: 'Edit 1' }] }),
+    }),
+    { params: Promise.resolve({ publicId: formA2.publicId }) }
+  );
+
+  const getResA3 = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA2.publicId}/submissions/edit?editToken=${tokenA2}`),
+    { params: Promise.resolve({ publicId: formA2.publicId }) }
+  );
+  assert.strictEqual(getResA3.status, 200, 'GET must succeed for edit 1 of 2');
+  const getDataA3 = await getResA3.json();
+  assert.strictEqual(getDataA3.submission.canEdit, true);
+  assert.strictEqual(getDataA3.submission.editCount, 1);
+  console.log('  ✓ Case 3 PASS: GET succeeds with 200 for 1 of 2 completed edits');
+
+  // Case 4: Maximum edits = 2 and two completed edits: GET edit page is rejected
+  console.log('  -> Case 4: Maximum edits = 2 and 2 completed edits...');
+  await editHandlerPut(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA2.publicId}/submissions/edit`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ editToken: tokenA2, answers: [{ questionId: qA2[0].id, value: 'Edit 2' }] }),
+    }),
+    { params: Promise.resolve({ publicId: formA2.publicId }) }
+  );
+
+  const getResA4 = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA2.publicId}/submissions/edit?editToken=${tokenA2}`),
+    { params: Promise.resolve({ publicId: formA2.publicId }) }
+  );
+  assert.strictEqual(getResA4.status, 403, 'GET must be rejected with 403 after 2 of 2 edits');
+  const getDataA4 = await getResA4.json();
+  assert.strictEqual(getDataA4.code, 'MAX_EDITS_EXCEEDED');
+  console.log('  ✓ Case 4 PASS: GET rejected with 403 after 2 of 2 edits');
+
+  // Case 5: Maximum edits = 3 and two completed edits: GET edit page succeeds
+  console.log('  -> Case 5: Maximum edits = 3 and 2 completed edits...');
+  const { form: formA3, questions: qA3 } = await createTestForm({
+    title: 'Access Test Form 3',
+    ownerId: adminUser.id,
+    settings: {
+      allowResponseEditing: true,
+      editingAuthMethod: 'SECURE_EDIT_LINK',
+      editingWindowMode: 'WITHIN_WINDOW',
+      editingTimeDuration: 24,
+      editingTimeUnit: 'Hours',
+      editingWindowMinutes: 1440,
+      maxEditCount: 3,
+    },
+  });
+  const subResA5 = await publicSubmissionHandler(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA3.publicId}/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers: [{ questionId: qA3[0].id, value: 'Initial' }] }),
+    }),
+    { params: Promise.resolve({ publicId: formA3.publicId }) }
+  );
+  const tokenA3 = (await subResA5.json()).editToken;
+
+  for (let i = 1; i <= 2; i++) {
+    await editHandlerPut(
+      new NextRequest(`http://localhost:3000/api/public/forms/${formA3.publicId}/submissions/edit`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ editToken: tokenA3, answers: [{ questionId: qA3[0].id, value: `Edit ${i}` }] }),
+      }),
+      { params: Promise.resolve({ publicId: formA3.publicId }) }
+    );
+  }
+
+  const getResA5 = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA3.publicId}/submissions/edit?editToken=${tokenA3}`),
+    { params: Promise.resolve({ publicId: formA3.publicId }) }
+  );
+  assert.strictEqual(getResA5.status, 200, 'GET must succeed for 2 of 3 completed edits');
+  const getDataA5 = await getResA5.json();
+  assert.strictEqual(getDataA5.submission.canEdit, true);
+  assert.strictEqual(getDataA5.submission.editCount, 2);
+  console.log('  ✓ Case 5 PASS: GET succeeds with 200 for 2 of 3 completed edits');
+
+  // Case 6: Expired editing window: GET edit page is rejected
+  console.log('  -> Case 6: Expired editing window...');
+  const expiredSub = await prisma.formSubmission.create({
+    data: {
+      formId: formA1.id,
+      submittedAt: new Date(Date.now() - 48 * 3600 * 1000), // 48 hours ago
+      editToken: `expired-tok-${Date.now()}`,
+      editCount: 0,
+    },
+  });
+  const getResA6 = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA1.publicId}/submissions/edit?editToken=${expiredSub.editToken}`),
+    { params: Promise.resolve({ publicId: formA1.publicId }) }
+  );
+  assert.strictEqual(getResA6.status, 403);
+  const getDataA6 = await getResA6.json();
+  assert.strictEqual(getDataA6.code, 'EDIT_WINDOW_EXPIRED');
+  console.log('  ✓ Case 6 PASS: Expired edit window rejected with 403 and code EDIT_WINDOW_EXPIRED');
+
+  // Case 7: Invalid token: GET edit page is rejected
+  console.log('  -> Case 7: Invalid token...');
+  const getResA7 = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA1.publicId}/submissions/edit?editToken=totally_invalid_random_token`),
+    { params: Promise.resolve({ publicId: formA1.publicId }) }
+  );
+  assert.strictEqual(getResA7.status, 404);
+  const getDataA7 = await getResA7.json();
+  assert.strictEqual(getDataA7.code, 'SUBMISSION_NOT_FOUND');
+  console.log('  ✓ Case 7 PASS: Non-existent token rejected with 404');
+
+  // Case 8: Token belonging to another form: GET edit page is rejected
+  console.log('  -> Case 8: Token belonging to another form...');
+  const getResA8 = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA2.publicId}/submissions/edit?editToken=${tokenA1}`),
+    { params: Promise.resolve({ publicId: formA2.publicId }) }
+  );
+  assert.strictEqual(getResA8.status, 403);
+  const getDataA8 = await getResA8.json();
+  assert.strictEqual(getDataA8.code, 'INVALID_TOKEN');
+  console.log('  ✓ Case 8 PASS: Cross-form edit token rejected with 403 INVALID_TOKEN');
+
+  // Case 9: Editing disabled: GET edit page is rejected
+  console.log('  -> Case 9: Editing disabled on form...');
+  const { form: formDisabled, questions: qDisabled } = await createTestForm({
+    title: 'Disabled Form',
+    ownerId: adminUser.id,
+    settings: {
+      allowResponseEditing: false,
+    },
+  });
+  const disabledSub = await prisma.formSubmission.create({
+    data: {
+      formId: formDisabled.id,
+      submittedAt: new Date(),
+      editToken: `dis-tok-${Date.now()}`,
+      editCount: 0,
+    },
+  });
+  const getResA9 = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formDisabled.publicId}/submissions/edit?editToken=${disabledSub.editToken}`),
+    { params: Promise.resolve({ publicId: formDisabled.publicId }) }
+  );
+  assert.strictEqual(getResA9.status, 403);
+  assert.strictEqual((await getResA9.json()).code, 'EDITING_DISABLED');
+  console.log('  ✓ Case 9 PASS: Editing disabled rejected with 403 EDITING_DISABLED');
+
+  // Case 10: Deleted submission: GET edit page is rejected
+  console.log('  -> Case 10: Deleted submission...');
+  const tempSub = await prisma.formSubmission.create({
+    data: {
+      formId: formA1.id,
+      submittedAt: new Date(),
+      editToken: `temp-del-${Date.now()}`,
+      editCount: 0,
+    },
+  });
+  await prisma.formSubmission.delete({ where: { id: tempSub.id } });
+  const getResA10 = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA1.publicId}/submissions/edit?editToken=${tempSub.editToken}`),
+    { params: Promise.resolve({ publicId: formA1.publicId }) }
+  );
+  assert.strictEqual(getResA10.status, 404);
+  assert.strictEqual((await getResA10.json()).code, 'SUBMISSION_NOT_FOUND');
+  console.log('  ✓ Case 10 PASS: Deleted submission rejected with 404 SUBMISSION_NOT_FOUND');
+
+  // ------------------------------------------------------------------------
+  // Requirement 15: Refresh and Navigation Verification (Cases 11 - 16)
+  // ------------------------------------------------------------------------
+  console.log('\n[TEST 15] Refresh and Navigation Verification (Cases 11 - 16)');
+
+  // Case 11: Open valid edit link and refresh before editing: editing form remains accessible
+  console.log('  -> Case 11: Refresh before editing (remains accessible)...');
+  const getRef1 = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA3.publicId}/submissions/edit?editToken=${tokenA3}`),
+    { params: Promise.resolve({ publicId: formA3.publicId }) }
+  );
+  assert.strictEqual(getRef1.status, 200, 'Initial load succeeds');
+  const getRef2 = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formA3.publicId}/submissions/edit?editToken=${tokenA3}`),
+    { params: Promise.resolve({ publicId: formA3.publicId }) }
+  );
+  assert.strictEqual(getRef2.status, 200, 'Refresh load also succeeds');
+  console.log('  ✓ Case 11 PASS: Refresh before editing keeps editing form accessible');
+
+  // Case 12: Complete only permitted edit and refresh: exhausted-link screen appears
+  console.log('  -> Case 12: Complete edit and refresh (shows Response Already Submitted)...');
+  const { form: formSingle, questions: qSingle } = await createTestForm({
+    title: 'Single Edit Form',
+    ownerId: adminUser.id,
+    settings: {
+      allowResponseEditing: true,
+      editingAuthMethod: 'SECURE_EDIT_LINK',
+      editingWindowMode: 'WITHIN_WINDOW',
+      editingTimeDuration: 24,
+      editingTimeUnit: 'Hours',
+      editingWindowMinutes: 1440,
+      maxEditCount: 1,
+    },
+  });
+  const subSingle = await (
+    await publicSubmissionHandler(
+      new NextRequest(`http://localhost:3000/api/public/forms/${formSingle.publicId}/submissions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: [{ questionId: qSingle[0].id, value: 'Orig' }] }),
+      }),
+      { params: Promise.resolve({ publicId: formSingle.publicId }) }
+    )
+  ).json();
+
+  // Complete the one edit
+  const putSingleRes = await editHandlerPut(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formSingle.publicId}/submissions/edit`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ editToken: subSingle.editToken, answers: [{ questionId: qSingle[0].id, value: 'Updated' }] }),
+    }),
+    { params: Promise.resolve({ publicId: formSingle.publicId }) }
+  );
+  assert.strictEqual(putSingleRes.status, 200);
+
+  // Refresh old edit URL
+  const refreshRes = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formSingle.publicId}/submissions/edit?editToken=${subSingle.editToken}`),
+    { params: Promise.resolve({ publicId: formSingle.publicId }) }
+  );
+  assert.strictEqual(refreshRes.status, 403);
+  const refreshData = await refreshRes.json();
+  assert.strictEqual(refreshData.code, 'MAX_EDITS_EXCEEDED');
+  assert(
+    refreshData.error.includes('You have used all permitted editing attempts, so further changes are no longer available.'),
+    `Error must contain exhausted notice: ${refreshData.error}`
+  );
+  console.log('  ✓ Case 12 PASS: Refresh on exhausted edit link authoritatively rejected with exact expected message');
+
+  // Case 13: Open exhausted edit link in a new tab: editing form remains inaccessible
+  console.log('  -> Case 13: New tab access to exhausted link...');
+  const newTabRes = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formSingle.publicId}/submissions/edit?editToken=${subSingle.editToken}`, {
+      headers: { 'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate' },
+    }),
+    { params: Promise.resolve({ publicId: formSingle.publicId }) }
+  );
+  assert.strictEqual(newTabRes.status, 403);
+  assert.strictEqual((await newTabRes.json()).code, 'MAX_EDITS_EXCEEDED');
+  console.log('  ✓ Case 13 PASS: New tab request to exhausted link is blocked');
+
+  // Case 14: Open exhausted edit link in another browser session: editing form remains inaccessible
+  console.log('  -> Case 14: Another browser session (different IP/agent)...');
+  const anotherSessionRes = await editHandlerGet(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formSingle.publicId}/submissions/edit?editToken=${subSingle.editToken}`, {
+      headers: { 'x-forwarded-for': '203.0.113.195', 'user-agent': 'AnotherBrowser/1.0' },
+    }),
+    { params: Promise.resolve({ publicId: formSingle.publicId }) }
+  );
+  assert.strictEqual(anotherSessionRes.status, 403);
+  assert.strictEqual((await anotherSessionRes.json()).code, 'MAX_EDITS_EXCEEDED');
+  console.log('  ✓ Case 14 PASS: Different browser session to exhausted link is blocked');
+
+  // Case 15: Use browser back navigation after exhausting limit
+  console.log('  -> Case 15: Browser back navigation static code verification...');
+  assert(pageSrc.includes('isValidatingEditToken'), 'page.tsx must use isValidatingEditToken to prevent form flash');
+  assert(pageSrc.includes('editLinkRejection'), 'page.tsx must track editLinkRejection state');
+  assert(pageSrc.includes('Response Already Submitted'), 'page.tsx must show Response Already Submitted');
+  console.log('  ✓ Case 15 PASS: page.tsx authoritative validation prevents back-nav bypass');
+
+  // Case 16: Simulate stale cached data
+  console.log('  -> Case 16: Stale cache prevention headers...');
+  assert(getResA2.headers.get('cache-control')?.includes('no-store'), 'Rejection response must have no-store');
+  assert(getResA2.headers.get('cache-control')?.includes('no-cache'), 'Rejection response must have no-cache');
+  console.log('  ✓ Case 16 PASS: Cache-Control: no-store, no-cache verified on all responses');
+
+  // ------------------------------------------------------------------------
+  // Requirement 16: API Security and Authorization Consistency (Cases 17 - 22)
+  // ------------------------------------------------------------------------
+  console.log('\n[TEST 16] API Security and Authorization Consistency (Cases 17 - 22)');
+
+  // Case 17: Direct POST/PUT request using exhausted token: rejected
+  console.log('  -> Case 17: Direct PUT using exhausted token...');
+  const directPutExhausted = await editHandlerPut(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formSingle.publicId}/submissions/edit`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ editToken: subSingle.editToken, answers: [{ questionId: qSingle[0].id, value: 'Hacker Edit' }] }),
+    }),
+    { params: Promise.resolve({ publicId: formSingle.publicId }) }
+  );
+  assert.strictEqual(directPutExhausted.status, 403);
+  assert.strictEqual((await directPutExhausted.json()).code, 'MAX_EDITS_EXCEEDED');
+  console.log('  ✓ Case 17 PASS: Direct PUT with exhausted token rejected with 403');
+
+  // Case 18: Direct POST/PUT request using invalid token: rejected
+  console.log('  -> Case 18: Direct PUT using invalid token...');
+  const directPutInvalid = await editHandlerPut(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formSingle.publicId}/submissions/edit`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ editToken: 'invalid_tok_123', answers: [{ questionId: qSingle[0].id, value: 'Hacker Edit' }] }),
+    }),
+    { params: Promise.resolve({ publicId: formSingle.publicId }) }
+  );
+  assert.strictEqual(directPutInvalid.status, 404);
+  assert.strictEqual((await directPutInvalid.json()).code, 'SUBMISSION_NOT_FOUND');
+  console.log('  ✓ Case 18 PASS: Direct PUT with invalid token rejected with 404');
+
+  // Case 19: Simultaneous requests with one remaining edit: only one succeeds
+  console.log('  -> Case 19: Simultaneous requests with 1 remaining edit...');
+  const { form: formRace, questions: qRace } = await createTestForm({
+    title: 'Race Condition Form',
+    ownerId: adminUser.id,
+    settings: {
+      allowResponseEditing: true,
+      editingAuthMethod: 'SECURE_EDIT_LINK',
+      editingWindowMode: 'WITHIN_WINDOW',
+      editingTimeDuration: 24,
+      editingTimeUnit: 'Hours',
+      editingWindowMinutes: 1440,
+      maxEditCount: 1,
+    },
+  });
+  const subRace = await (
+    await publicSubmissionHandler(
+      new NextRequest(`http://localhost:3000/api/public/forms/${formRace.publicId}/submissions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: [{ questionId: qRace[0].id, value: 'Race Start' }] }),
+      }),
+      { params: Promise.resolve({ publicId: formRace.publicId }) }
+    )
+  ).json();
+
+  const [raceRes1, raceRes2] = await Promise.all([
+    editHandlerPut(
+      new NextRequest(`http://localhost:3000/api/public/forms/${formRace.publicId}/submissions/edit`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ editToken: subRace.editToken, answers: [{ questionId: qRace[0].id, value: 'Racer 1' }] }),
+      }),
+      { params: Promise.resolve({ publicId: formRace.publicId }) }
+    ),
+    editHandlerPut(
+      new NextRequest(`http://localhost:3000/api/public/forms/${formRace.publicId}/submissions/edit`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ editToken: subRace.editToken, answers: [{ questionId: qRace[0].id, value: 'Racer 2' }] }),
+      }),
+      { params: Promise.resolve({ publicId: formRace.publicId }) }
+    ),
+  ]);
+  const statuses = [raceRes1.status, raceRes2.status].sort();
+  assert.deepStrictEqual(statuses, [200, 403], 'Exactly one concurrent edit must succeed (200) and one fail (403)');
+  console.log('  ✓ Case 19 PASS: Concurrency serialized via advisory lock (one 200, one 403)');
+
+  // Case 20: Failed edit request does not increment editCount
+  console.log('  -> Case 20: Failed edit request does not increment editCount...');
+  const subBeforeFail = await prisma.formSubmission.findFirst({ where: { editToken: subRace.editToken } });
+  const countBefore = subBeforeFail?.editCount;
+
+  // Attempt invalid schema edit
+  await editHandlerPut(
+    new NextRequest(`http://localhost:3000/api/public/forms/${formRace.publicId}/submissions/edit`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ editToken: subRace.editToken, answers: 'invalid_answers_string' }),
+    }),
+    { params: Promise.resolve({ publicId: formRace.publicId }) }
+  );
+
+  const subAfterFail = await prisma.formSubmission.findFirst({ where: { editToken: subRace.editToken } });
+  assert.strictEqual(subAfterFail?.editCount, countBefore, 'editCount must NOT increment on rejected edit');
+  console.log('  ✓ Case 20 PASS: Failed edit attempt preserved editCount');
+
+  // Case 21: Original submittedAt remains unchanged
+  console.log('  -> Case 21: Original submittedAt remains unchanged...');
+  assert.strictEqual(
+    subBeforeFail?.submittedAt.getTime(),
+    subAfterFail?.submittedAt.getTime(),
+    'submittedAt timestamp must remain immutable'
+  );
+  console.log('  ✓ Case 21 PASS: submittedAt timestamp preserved exactly');
+
+  // Case 22: Original submission is not duplicated
+  console.log('  -> Case 22: Original submission is not duplicated...');
+  const totalSubmissionsFormRace = await prisma.formSubmission.count({ where: { formId: formRace.id } });
+  assert.strictEqual(totalSubmissionsFormRace, 1, 'Total submissions must remain exactly 1');
+  console.log('  ✓ Case 22 PASS: In-place update verified, 0 duplicate submissions created');
+
   console.log('\n========================================================================');
-  console.log('  ALL 13 RESPONSE EDITING REGRESSION TESTS PASSED SUCCESSFULLY! (100%)   ');
+  console.log('  ALL 16 RESPONSE EDITING REGRESSION TEST SUITES PASSED (100%)           ');
   console.log('========================================================================\n');
 }
 

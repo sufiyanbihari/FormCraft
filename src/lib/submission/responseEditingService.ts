@@ -33,11 +33,22 @@ export interface VerifyEditEligibilityParams {
   now?: Date;
 }
 
+export type EditRejectionCode =
+  | 'EDITING_DISABLED'
+  | 'FORM_CLOSED'
+  | 'INVALID_TOKEN'
+  | 'MAX_EDITS_EXCEEDED'
+  | 'EDIT_WINDOW_EXPIRED'
+  | 'SUBMISSION_NOT_FOUND';
+
 export interface EditEligibilityResult {
   allowed: boolean;
   reason?: string;
+  code?: EditRejectionCode;
   statusCode?: number;
   actorType?: 'RESPONDENT' | 'ADMIN';
+  maxEditCount?: number;
+  currentEditCount?: number;
 }
 
 /**
@@ -63,7 +74,8 @@ export function verifyEditEligibility({
   if (!settings?.allowResponseEditing) {
     return {
       allowed: false,
-      reason: 'Response editing is not enabled for this form.',
+      code: 'EDITING_DISABLED',
+      reason: 'Editing is not available for this form.',
       statusCode: 403,
     };
   }
@@ -72,6 +84,7 @@ export function verifyEditEligibility({
   if (settings.isAcceptingResponses === false) {
     return {
       allowed: false,
+      code: 'FORM_CLOSED',
       reason: settings.closedMessage || 'This form is no longer accepting responses or edits.',
       statusCode: 403,
     };
@@ -79,7 +92,8 @@ export function verifyEditEligibility({
   if (settings.endDate && new Date(settings.endDate) < now) {
     return {
       allowed: false,
-      reason: 'The deadline for this form has passed. Edits are no longer accepted.',
+      code: 'EDIT_WINDOW_EXPIRED',
+      reason: 'Editing period has expired. Edits are no longer accepted.',
       statusCode: 403,
     };
   }
@@ -88,7 +102,8 @@ export function verifyEditEligibility({
   if (!editToken || editToken !== submission.editToken) {
     return {
       allowed: false,
-      reason: 'Invalid or missing edit link token. You do not have permission to edit this response.',
+      code: 'INVALID_TOKEN',
+      reason: 'Invalid or unavailable edit link. You do not have permission to edit this response.',
       statusCode: 401,
     };
   }
@@ -99,8 +114,11 @@ export function verifyEditEligibility({
   if (currentEditCount >= maxEdits) {
     return {
       allowed: false,
-      reason: `This response has already reached the maximum allowed limit of ${maxEdits} edit${maxEdits === 1 ? '' : 's'}. Further edits are not permitted.`,
+      code: 'MAX_EDITS_EXCEEDED',
+      reason: `This response has already reached the maximum allowed limit of ${maxEdits} edit${maxEdits === 1 ? '' : 's'}. You have used all permitted editing attempts, so further changes are no longer available.`,
       statusCode: 403,
+      maxEditCount: maxEdits,
+      currentEditCount,
     };
   }
 
@@ -119,7 +137,8 @@ export function verifyEditEligibility({
   if (now.getTime() > expiryTime) {
     return {
       allowed: false,
-      reason: 'The editing window for this response has expired. Edits are no longer accepted.',
+      code: 'EDIT_WINDOW_EXPIRED',
+      reason: 'Editing period has expired. Edits are no longer accepted.',
       statusCode: 403,
     };
   }

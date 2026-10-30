@@ -36,8 +36,8 @@ export async function GET(
 
     if (!form || form.status !== 'PUBLISHED') {
       return NextResponse.json(
-        { error: 'This form is not found or is currently closed.' },
-        { status: 404 }
+        { error: 'This form is not found or is currently closed.', code: 'FORM_NOT_FOUND', canEdit: false },
+        { status: 404, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -49,8 +49,12 @@ export async function GET(
 
     if (!editToken && !isAdmin) {
       return NextResponse.json(
-        { error: 'Invalid or missing edit link token. You do not have permission to edit this response.' },
-        { status: 401 }
+        {
+          error: 'Invalid or unavailable edit link. You do not have permission to edit this response.',
+          code: 'INVALID_TOKEN',
+          canEdit: false,
+        },
+        { status: 401, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -86,9 +90,29 @@ export async function GET(
     }
 
     if (!submission) {
+      if (editToken) {
+        const tokenExistsElsewhere = await prisma.formSubmission.findFirst({
+          where: { editToken },
+          select: { id: true, formId: true },
+        });
+        if (tokenExistsElsewhere) {
+          return NextResponse.json(
+            {
+              error: 'This edit link does not belong to this form.',
+              code: 'INVALID_TOKEN',
+              canEdit: false,
+            },
+            { status: 403, headers: { 'Cache-Control': 'no-store, max-age=0' } }
+          );
+        }
+      }
       return NextResponse.json(
-        { error: 'Submission not found. Please verify your edit link.' },
-        { status: 404 }
+        {
+          error: 'Submission unavailable. Please verify your edit link.',
+          code: 'SUBMISSION_NOT_FOUND',
+          canEdit: false,
+        },
+        { status: 404, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -103,8 +127,21 @@ export async function GET(
 
     if (!eligibility.allowed) {
       return NextResponse.json(
-        { error: eligibility.reason || 'You do not have permission to edit this response.' },
-        { status: eligibility.statusCode || 403 }
+        {
+          error: eligibility.reason || 'You do not have permission to edit this response.',
+          code: eligibility.code || 'EDIT_FORBIDDEN',
+          canEdit: false,
+          maxEditCount: eligibility.maxEditCount,
+          currentEditCount: eligibility.currentEditCount,
+          formTitle: form.title,
+        },
+        {
+          status: eligibility.statusCode || 403,
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+          },
+        }
       );
     }
 
@@ -115,21 +152,29 @@ export async function GET(
     }
 
     const maxEdits = Number(form.settings?.maxEditCount) || 1;
-    return NextResponse.json({
-      submission: {
-        id: submission.id,
-        editToken: submission.editToken,
-        submittedAt: submission.submittedAt,
-        editCount: submission.editCount,
-        maxEditCount: maxEdits,
-        canEdit: true,
-        lastEditedAt: submission.lastEditedAt,
-        respondentEmail: submission.respondentEmail,
-        answers: formattedAnswers,
-        cattleOwners: submission.cattleOwners,
+    return NextResponse.json(
+      {
+        submission: {
+          id: submission.id,
+          editToken: submission.editToken,
+          submittedAt: submission.submittedAt,
+          editCount: submission.editCount,
+          maxEditCount: maxEdits,
+          canEdit: true,
+          lastEditedAt: submission.lastEditedAt,
+          respondentEmail: submission.respondentEmail,
+          answers: formattedAnswers,
+          cattleOwners: submission.cattleOwners,
+        },
+        form,
       },
-      form,
-    });
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+        },
+      }
+    );
   } catch (error: any) {
     console.error('Failed to load submission for editing:', error);
     return NextResponse.json(
@@ -179,8 +224,12 @@ export async function PUT(
 
     if (!editToken && !isAdmin) {
       return NextResponse.json(
-        { error: 'Invalid or missing edit link token. You do not have permission to edit this response.' },
-        { status: 401 }
+        {
+          error: 'Invalid or unavailable edit link. You do not have permission to edit this response.',
+          code: 'INVALID_TOKEN',
+          canEdit: false,
+        },
+        { status: 401, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -205,9 +254,29 @@ export async function PUT(
     }
 
     if (!submission) {
+      if (editToken) {
+        const tokenExistsElsewhere = await prisma.formSubmission.findFirst({
+          where: { editToken },
+          select: { id: true, formId: true },
+        });
+        if (tokenExistsElsewhere) {
+          return NextResponse.json(
+            {
+              error: 'This edit link does not belong to this form.',
+              code: 'INVALID_TOKEN',
+              canEdit: false,
+            },
+            { status: 403, headers: { 'Cache-Control': 'no-store, max-age=0' } }
+          );
+        }
+      }
       return NextResponse.json(
-        { error: 'Submission not found or unauthorized.' },
-        { status: 404 }
+        {
+          error: 'Submission unavailable. Please verify your edit link.',
+          code: 'SUBMISSION_NOT_FOUND',
+          canEdit: false,
+        },
+        { status: 404, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -222,8 +291,14 @@ export async function PUT(
 
     if (!eligibility.allowed) {
       return NextResponse.json(
-        { error: eligibility.reason || 'You do not have permission to edit this response.' },
-        { status: eligibility.statusCode || 403 }
+        {
+          error: eligibility.reason || 'You do not have permission to edit this response.',
+          code: eligibility.code || 'EDIT_FORBIDDEN',
+          canEdit: false,
+          maxEditCount: eligibility.maxEditCount,
+          currentEditCount: eligibility.currentEditCount,
+        },
+        { status: eligibility.statusCode || 403, headers: { 'Cache-Control': 'no-store, max-age=0' } }
       );
     }
 
@@ -384,23 +459,29 @@ export async function PUT(
       if (txErr?.message === 'MAX_EDITS_EXCEEDED') {
         return NextResponse.json(
           {
-            error: `This response has already reached the maximum allowed limit of ${maxEdits} edit${maxEdits === 1 ? '' : 's'}. Further edits are not permitted.`,
+            error: `This response has already reached the maximum allowed limit of ${maxEdits} edit${maxEdits === 1 ? '' : 's'}. You have used all permitted editing attempts, so further changes are no longer available.`,
+            code: 'MAX_EDITS_EXCEEDED',
+            canEdit: false,
             maxEditCount: maxEdits,
             currentEditCount: txErr.editCount,
           },
-          { status: 403 }
+          { status: 403, headers: { 'Cache-Control': 'no-store, max-age=0' } }
         );
       }
       if (txErr?.message === 'EDIT_WINDOW_EXPIRED') {
         return NextResponse.json(
-          { error: 'The editing window for this response has expired. Edits are no longer accepted.' },
-          { status: 403 }
+          {
+            error: 'Editing period has expired. Edits are no longer accepted.',
+            code: 'EDIT_WINDOW_EXPIRED',
+            canEdit: false,
+          },
+          { status: 403, headers: { 'Cache-Control': 'no-store, max-age=0' } }
         );
       }
       if (txErr?.code === 'P2025') {
         return NextResponse.json(
-          { error: 'Concurrent edit conflict detected. Please refresh and try again.' },
-          { status: 409 }
+          { error: 'Concurrent edit conflict detected. Please refresh and try again.', code: 'CONCURRENT_CONFLICT' },
+          { status: 409, headers: { 'Cache-Control': 'no-store, max-age=0' } }
         );
       }
       throw txErr;
@@ -439,18 +520,26 @@ export async function PUT(
     const isWithinWindow = Date.now() <= expiryTime;
     const canEdit = allowEditing && isWithinWindow && updatedSubmission.editCount < maxEdits;
 
-    return NextResponse.json({
-      message: 'Your response has been successfully updated.',
-      submissionId: updatedSubmission.id,
-      submittedAt: updatedSubmission.submittedAt,
-      editToken: canEdit ? updatedSubmission.editToken : undefined,
-      editCount: updatedSubmission.editCount,
-      maxEditCount: maxEdits,
-      canEdit,
-      allowResponseEditing: allowEditing,
-      lastEditedAt: updatedSubmission.lastEditedAt,
-      score: quizResult,
-    });
+    return NextResponse.json(
+      {
+        message: 'Your response has been successfully updated.',
+        submissionId: updatedSubmission.id,
+        submittedAt: updatedSubmission.submittedAt,
+        editToken: canEdit ? updatedSubmission.editToken : undefined,
+        editCount: updatedSubmission.editCount,
+        maxEditCount: maxEdits,
+        canEdit,
+        allowResponseEditing: allowEditing,
+        lastEditedAt: updatedSubmission.lastEditedAt,
+        score: quizResult,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+        },
+      }
+    );
   } catch (error: any) {
     console.error('Failed to update submission:', error);
     return NextResponse.json(

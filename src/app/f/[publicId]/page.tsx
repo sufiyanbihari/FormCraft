@@ -94,6 +94,15 @@ function PublicFormContent() {
     editToken?: string;
   } | null>(null);
 
+  // Authoritative Edit Link Validation & Rejection State
+  interface EditLinkRejection {
+    code: 'MAX_EDITS_EXCEEDED' | 'EDIT_WINDOW_EXPIRED' | 'INVALID_TOKEN' | 'SUBMISSION_NOT_FOUND' | 'EDITING_DISABLED' | 'NETWORK_ERROR' | 'UNKNOWN';
+    title: string;
+    message: string;
+  }
+  const [editLinkRejection, setEditLinkRejection] = useState<EditLinkRejection | null>(null);
+  const [isValidatingEditToken, setIsValidatingEditToken] = useState<boolean>(Boolean(editTokenParam));
+
   // Ensure body background is #004B6E
   useEffect(() => {
     const original = document.body.style.backgroundColor;
@@ -121,19 +130,85 @@ function PublicFormContent() {
     }
   }, [publicId]);
 
-  // Load existing submission if editToken parameter is present
+  // Authoritatively load existing submission if editToken parameter is present
   useEffect(() => {
-    if (!publicId || !editTokenParam) return;
+    if (!publicId || !editTokenParam) {
+      setIsValidatingEditToken(false);
+      return;
+    }
 
     const loadSubmissionForEdit = async () => {
+      setIsValidatingEditToken(true);
+      setEditLinkRejection(null);
       try {
         const res = await fetch(
           `/api/public/forms/${publicId}/submissions/edit?editToken=${encodeURIComponent(editTokenParam)}`,
-          { cache: 'no-store' }
+          {
+            cache: 'no-store',
+            headers: { 'Cache-Control': 'no-store' },
+          }
         );
         const data = await res.json();
         if (!res.ok) {
-          setValidationError(data.error || 'Failed to load submission for editing.');
+          setIsEditMode(false);
+          setActiveEditToken(null);
+
+          const code =
+            data.code ||
+            (res.status === 404
+              ? 'SUBMISSION_NOT_FOUND'
+              : res.status === 401
+                ? 'INVALID_TOKEN'
+                : 'UNKNOWN');
+
+          if (
+            code === 'MAX_EDITS_EXCEEDED' ||
+            data.error?.includes('maximum') ||
+            data.error?.includes('already updated') ||
+            data.error?.includes('already reached')
+          ) {
+            setEditLinkRejection({
+              code: 'MAX_EDITS_EXCEEDED',
+              title: 'Response Already Submitted',
+              message:
+                'Your response has already been updated successfully. You have used all permitted editing attempts, so further changes are no longer available.',
+            });
+          } else if (
+            code === 'EDIT_WINDOW_EXPIRED' ||
+            data.error?.includes('expired') ||
+            data.error?.includes('window') ||
+            data.error?.includes('deadline')
+          ) {
+            setEditLinkRejection({
+              code: 'EDIT_WINDOW_EXPIRED',
+              title: 'Editing period has expired',
+              message: 'The editing period for this response has expired. Edits are no longer accepted.',
+            });
+          } else if (code === 'INVALID_TOKEN' || res.status === 401) {
+            setEditLinkRejection({
+              code: 'INVALID_TOKEN',
+              title: 'Invalid or unavailable edit link',
+              message: 'The edit link you followed is invalid or you do not have permission to edit this response.',
+            });
+          } else if (code === 'SUBMISSION_NOT_FOUND' || res.status === 404) {
+            setEditLinkRejection({
+              code: 'SUBMISSION_NOT_FOUND',
+              title: 'Submission unavailable',
+              message: 'The requested submission could not be found or has been removed.',
+            });
+          } else if (code === 'EDITING_DISABLED') {
+            setEditLinkRejection({
+              code: 'EDITING_DISABLED',
+              title: 'Editing is not available',
+              message: 'Response editing has been disabled for this form.',
+            });
+          } else {
+            setEditLinkRejection({
+              code: 'UNKNOWN',
+              title: 'Editing Unavailable',
+              message: data.error || 'You cannot edit this response.',
+            });
+          }
           return;
         }
 
@@ -150,7 +225,11 @@ function PublicFormContent() {
           if (data.submission.answers) {
             setAnswers(data.submission.answers);
           }
-          if (data.submission.cattleOwners && Array.isArray(data.submission.cattleOwners) && data.submission.cattleOwners.length > 0) {
+          if (
+            data.submission.cattleOwners &&
+            Array.isArray(data.submission.cattleOwners) &&
+            data.submission.cattleOwners.length > 0
+          ) {
             setCattleOwners(data.submission.cattleOwners);
           }
           if (data.submission.respondentEmail) {
@@ -158,7 +237,15 @@ function PublicFormContent() {
           }
         }
       } catch {
-        setValidationError('Failed to load existing submission for editing. Please check your network.');
+        setIsEditMode(false);
+        setActiveEditToken(null);
+        setEditLinkRejection({
+          code: 'NETWORK_ERROR',
+          title: 'Connection Error',
+          message: 'Failed to verify edit permissions. Please check your network connection and try again.',
+        });
+      } finally {
+        setIsValidatingEditToken(false);
       }
     };
 
@@ -740,7 +827,7 @@ function PublicFormContent() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isValidatingEditToken) {
     return (
       <div
         className="min-h-screen flex items-center justify-center p-4 transition-colors"
@@ -748,7 +835,98 @@ function PublicFormContent() {
       >
         <div className="flex flex-col items-center gap-3 text-white">
           <Loader2 className="h-8 w-8 animate-spin text-white" />
-          <p className="text-sm font-medium text-sky-100">Loading form...</p>
+          <p className="text-sm font-medium text-sky-100">
+            {editTokenParam ? 'Verifying edit link...' : 'Loading form...'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Handle Exhausted Edit Links and Edit Rejections
+  if (editLinkRejection) {
+    const isMaxExhausted = editLinkRejection.code === 'MAX_EDITS_EXCEEDED';
+    const activeTheme = formData?.theme || {};
+    const effectiveBg =
+      activeTheme.backgroundColor && activeTheme.backgroundColor !== '#f0ebf8'
+        ? activeTheme.backgroundColor
+        : '#004B6E';
+
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-4 transition-colors"
+        style={{
+          backgroundColor: effectiveBg,
+          fontFamily: activeTheme.fontFamily || 'Inter',
+        }}
+      >
+        <div
+          className={`max-w-lg w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-8 shadow-xl text-center space-y-6 ${
+            activeTheme.borderRadius || 'rounded-2xl'
+          }`}
+        >
+          {/* Top banner color */}
+          <div
+            className="h-2.5 -mx-8 -mt-8 rounded-t-2xl mb-6"
+            style={{ backgroundColor: activeTheme.primaryColor || '#004B6E' }}
+          />
+
+          <div
+            className={`h-16 w-16 rounded-full mx-auto flex items-center justify-center shadow-md ${
+              isMaxExhausted
+                ? 'bg-emerald-100 text-emerald-600 shadow-emerald-500/20'
+                : 'bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400 shadow-amber-500/20'
+            }`}
+          >
+            {isMaxExhausted ? (
+              <CheckCircle2 className="h-9 w-9" />
+            ) : (
+              <AlertCircle className="h-9 w-9" />
+            )}
+          </div>
+
+          <div>
+            {formData?.title && (
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                {formData.title}
+              </h2>
+            )}
+            <h3
+              className={`text-lg font-extrabold ${
+                isMaxExhausted
+                  ? 'text-gray-900 dark:text-gray-100'
+                  : 'text-amber-800 dark:text-amber-200'
+              }`}
+            >
+              {editLinkRejection.title}
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mt-2 leading-relaxed">
+              {editLinkRejection.message}
+            </p>
+          </div>
+
+          {editLinkRejection.code === 'NETWORK_ERROR' && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => window.location.reload()}
+              className="text-xs font-semibold cursor-pointer"
+            >
+              Retry
+            </Button>
+          )}
+
+          <div className="flex items-center justify-center gap-2 pt-4 border-t border-gray-100 dark:border-gray-800">
+            <img
+              src="/logo.png"
+              alt="FormCraft"
+              className="h-6 w-auto object-contain"
+            />
+            <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+              FormCraft – Digital Form Builder &amp; Management Platform
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -1215,7 +1393,36 @@ function PublicFormContent() {
 
         const data = await res.json();
         if (!res.ok) {
-          setValidationError(data.error || 'Failed to update response');
+          if (
+            data.code === 'MAX_EDITS_EXCEEDED' ||
+            data.error?.includes('maximum') ||
+            data.error?.includes('already updated') ||
+            data.error?.includes('already reached')
+          ) {
+            setIsEditMode(false);
+            setActiveEditToken(null);
+            setEditLinkRejection({
+              code: 'MAX_EDITS_EXCEEDED',
+              title: 'Response Already Submitted',
+              message:
+                'Your response has already been updated successfully. You have used all permitted editing attempts, so further changes are no longer available.',
+            });
+          } else if (
+            data.code === 'EDIT_WINDOW_EXPIRED' ||
+            data.error?.includes('expired') ||
+            data.error?.includes('window') ||
+            data.error?.includes('deadline')
+          ) {
+            setIsEditMode(false);
+            setActiveEditToken(null);
+            setEditLinkRejection({
+              code: 'EDIT_WINDOW_EXPIRED',
+              title: 'Editing period has expired',
+              message: 'The editing period for this response has expired. Edits are no longer accepted.',
+            });
+          } else {
+            setValidationError(data.error || 'Failed to update response');
+          }
         } else {
           setIsSubmitted(true);
           const nextCanEdit = Boolean(data.canEdit);
@@ -1229,6 +1436,9 @@ function PublicFormContent() {
           if (!nextCanEdit) {
             setActiveEditToken(null);
             setIsEditMode(false);
+            if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+              window.history.replaceState({}, '', window.location.pathname);
+            }
           }
           confetti({
             particleCount: 80,
