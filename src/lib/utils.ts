@@ -153,3 +153,66 @@ export function generateImportSectionTitle(customBaseTitle: string | undefined |
   return `${base} ${index + 1}`;
 }
 
+/**
+ * Detects whether an existing form structure contains an unwanted default section
+ * automatically created during form initialization that should be replaced/removed
+ * during question import when creating new section(s).
+ *
+ * CRITICAL: Preserves all intentional user-created sections:
+ * - Never deletes sections if there are multiple sections in the form.
+ * - Never deletes a section with a custom title (e.g. not "Section 1" / empty).
+ * - Never deletes a section with a custom description.
+ * - Never deletes a section with intentional user questions.
+ */
+export function getUnwantedDefaultSection<T extends {
+  id: string;
+  title?: string | null;
+  description?: string | null;
+  orderIndex?: number | null;
+  questions?: Array<{
+    id?: string;
+    title?: string | null;
+    description?: string | null;
+    type?: string | null;
+    quizPoints?: number | null;
+    options?: any[];
+  }> | null;
+}>(sections: T[]): T | null {
+  // Only applicable if there is exactly 1 section in the entire form
+  if (!sections || sections.length !== 1) return null;
+
+  const sec = sections[0];
+  if (sec.orderIndex !== 0 && sec.orderIndex !== undefined && sec.orderIndex !== null) return null;
+
+  // Title must be empty or default "Section 1"
+  const rawTitle = (sec.title || '').trim().toLowerCase();
+  const isDefaultTitle = rawTitle === '' || rawTitle === 'section 1';
+  const isDefaultDesc = !(sec.description && sec.description.trim() !== '');
+
+  if (!isDefaultTitle || !isDefaultDesc) return null;
+
+  // Case A: 0 questions in section -> Unwanted empty default section
+  if (!sec.questions || sec.questions.length === 0) {
+    return sec;
+  }
+
+  // Case B: Exactly 1 untouched default placeholder question
+  if (sec.questions.length === 1) {
+    const q = sec.questions[0];
+    const qTitle = (q.title || '').trim().toLowerCase();
+    const isDefaultQTitle = qTitle === 'untitled question' || qTitle === 'question 1';
+    const isDefaultQDesc = !(q.description && q.description.trim() !== '');
+    const opts = q.options || [];
+    const isDefaultOpts =
+      opts.length === 0 ||
+      (opts.length === 1 && (opts[0].label === 'Option 1' || opts[0].label === ''));
+
+    if (isDefaultQTitle && isDefaultQDesc && isDefaultOpts) {
+      return sec;
+    }
+  }
+
+  return null;
+}
+
+

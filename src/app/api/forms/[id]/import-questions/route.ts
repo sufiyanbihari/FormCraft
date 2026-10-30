@@ -4,7 +4,7 @@ import { getAuthUserFromRequest } from '@/lib/auth/session';
 import { getUserFormRole, canEditForm } from '@/lib/auth/rbac';
 import { z } from 'zod';
 import { logActivity } from '@/lib/audit/auditLogger';
-import { generateImportSectionTitle } from '@/lib/utils';
+import { generateImportSectionTitle, getUnwantedDefaultSection } from '@/lib/utils';
 
 const importQuestionsSchema = z.object({
   sourceFormId: z.string().min(1, 'Source form ID is required'),
@@ -52,13 +52,20 @@ export async function POST(
       );
     }
 
-    // 3. Fetch target form and its sections
+    // 3. Fetch target form and its sections with questions
     const targetForm = await prisma.form.findUnique({
       where: { id: targetFormId },
       include: {
         settings: true,
         sections: {
           orderBy: { orderIndex: 'asc' },
+          include: {
+            questions: {
+              include: {
+                options: true,
+              },
+            },
+          },
         },
       },
     });
@@ -94,19 +101,36 @@ export async function POST(
     const result = await prisma.$transaction(async (tx) => {
       const newlyCreatedSections: any[] = [];
       const createdQuestions: any[] = [];
+      const deletedSectionIds: string[] = [];
       const warnings: string[] = [];
 
       // Collect target form section IDs for branching sanitization
       const targetSectionIdSet = new Set(targetForm.sections.map((s) => s.id));
 
       if (createNewSection) {
+        // Check if destination form has an unwanted temporary default section to clean up
+        const unwantedDefault = getUnwantedDefaultSection(targetForm.sections);
+        let nextSecOrder = 0;
+
+        if (unwantedDefault) {
+          await tx.formQuestion.deleteMany({
+            where: { sectionId: unwantedDefault.id },
+          });
+          await tx.formSection.delete({
+            where: { id: unwantedDefault.id },
+          });
+          deletedSectionIds.push(unwantedDefault.id);
+          targetSectionIdSet.delete(unwantedDefault.id);
+          nextSecOrder = 0;
+        } else {
+          nextSecOrder =
+            targetForm.sections.length > 0
+              ? Math.max(...targetForm.sections.map((s) => s.orderIndex)) + 1
+              : 0;
+        }
+
         // Requirement: Create exactly one new section for every selected question.
         // Sequential default titles: Questions 1, question 2, question 3, etc.
-        const nextSecOrder =
-          targetForm.sections.length > 0
-            ? Math.max(...targetForm.sections.map((s) => s.orderIndex)) + 1
-            : 0;
-
         for (let i = 0; i < orderedSourceQuestions.length; i++) {
           const srcQ = orderedSourceQuestions[i];
           const secTitle = generateImportSectionTitle(newSectionTitle, i);
@@ -335,6 +359,7 @@ export async function POST(
         importedQuestions: createdQuestions,
         newSections: newlyCreatedSections,
         newSection: newlyCreatedSections[0] || null,
+        deletedSectionIds,
         targetSectionId: newlyCreatedSections[0]?.id || targetSectionId,
         warnings,
       };
@@ -346,6 +371,7 @@ export async function POST(
       questions: result.importedQuestions,
       newSections: result.newSections,
       newSection: result.newSection,
+      deletedSectionIds: result.deletedSectionIds,
       targetSectionId: result.targetSectionId,
       warnings: result.warnings,
     });

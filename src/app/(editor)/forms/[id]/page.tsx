@@ -31,7 +31,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { Loader2, Sparkles, CheckCircle2, AlertCircle, X } from 'lucide-react';
-import { isLikelyImageSource } from '@/lib/utils';
+import { isLikelyImageSource, getUnwantedDefaultSection } from '@/lib/utils';
 
 function FormBuilderContent() {
   const params = useParams();
@@ -822,23 +822,50 @@ function FormBuilderContent() {
   // Import Questions Success Handler
   const handleImportSuccess = (
     importedQuestions: QuestionData[],
-    newSectionOrSections?: SectionData | SectionData[]
+    newSectionOrSections?: SectionData | SectionData[],
+    deletedSectionIds?: string[]
   ) => {
     let nextSections = sections;
+    const deletedIdSet = new Set(deletedSectionIds || []);
+
+    // Filter out backend-deleted sections
+    if (deletedIdSet.size > 0) {
+      nextSections = nextSections.filter((s) => !deletedIdSet.has(s.id));
+    }
+
     if (newSectionOrSections) {
       const added = Array.isArray(newSectionOrSections)
         ? newSectionOrSections
         : [newSectionOrSections];
-      const existingIds = new Set(sections.map((s) => s.id));
+
+      // If we are adding brand new sections and there is an unwanted empty default section locally
+      if (added.length > 0 && nextSections.length === 1) {
+        const sectionsWithQuestions = nextSections.map((sec) => ({
+          ...sec,
+          questions: questions.filter((q) => q.sectionId === sec.id),
+        }));
+        const unwanted = getUnwantedDefaultSection(sectionsWithQuestions);
+        if (unwanted) {
+          nextSections = [];
+          deletedIdSet.add(unwanted.id);
+        }
+      }
+
+      const existingIds = new Set(nextSections.map((s) => s.id));
       const fresh = added.filter((s) => !existingIds.has(s.id));
-      if (fresh.length > 0) {
-        nextSections = [...sections, ...fresh];
+      if (fresh.length > 0 || nextSections.length !== sections.length) {
+        nextSections = [...nextSections, ...fresh];
         setSections(nextSections);
       }
+    } else if (nextSections.length !== sections.length) {
+      setSections(nextSections);
     }
 
     setQuestions((prev) => {
-      const updated = [...prev, ...importedQuestions];
+      const sanitizedPrev = deletedIdSet.size > 0
+        ? prev.filter((q) => !deletedIdSet.has(q.sectionId || ''))
+        : prev;
+      const updated = [...sanitizedPrev, ...importedQuestions];
       updateHistory({
         title,
         description,

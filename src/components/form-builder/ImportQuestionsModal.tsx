@@ -70,7 +70,7 @@ interface ImportQuestionsModalProps {
   currentFormId: string;
   sections: SectionData[];
   activeSectionId?: string;
-  onImportSuccess: (importedQuestions: any[], newSection?: any) => void;
+  onImportSuccess: (importedQuestions: any[], newSection?: any, deletedSectionIds?: string[]) => void;
   primaryColor?: string;
   isQuiz?: boolean;
   onEnableQuiz?: () => void;
@@ -142,6 +142,7 @@ export default function ImportQuestionsModal({
     totalMarks: number;
     importedQuestions: any[];
     newSection?: any;
+    deletedSectionIds?: string[];
   } | null>(null);
 
   // Reset state on open
@@ -269,7 +270,7 @@ export default function ImportQuestionsModal({
         throw new Error(data.error || 'Failed to import questions');
       }
 
-      onImportSuccess(data.questions, data.newSections || data.newSection);
+      onImportSuccess(data.questions, data.newSections || data.newSection, data.deletedSectionIds);
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Import failed';
@@ -455,9 +456,10 @@ export default function ImportQuestionsModal({
           totalMarks,
           importedQuestions: data.questions,
           newSection: data.newSections || data.newSection,
+          deletedSectionIds: data.deletedSectionIds,
         });
       } else {
-        onImportSuccess(data.questions, data.newSections || data.newSection);
+        onImportSuccess(data.questions, data.newSections || data.newSection, data.deletedSectionIds);
         onClose();
       }
     } catch (err: unknown) {
@@ -626,7 +628,7 @@ export default function ImportQuestionsModal({
                   size="sm"
                   variant="outline"
                   onClick={() => {
-                    onImportSuccess(quizPromptData.importedQuestions, quizPromptData.newSection);
+                    onImportSuccess(quizPromptData.importedQuestions, quizPromptData.newSection, quizPromptData.deletedSectionIds);
                     onClose();
                   }}
                   className="text-xs"
@@ -637,7 +639,7 @@ export default function ImportQuestionsModal({
                   size="sm"
                   onClick={() => {
                     if (onEnableQuiz) onEnableQuiz();
-                    onImportSuccess(quizPromptData.importedQuestions, quizPromptData.newSection);
+                    onImportSuccess(quizPromptData.importedQuestions, quizPromptData.newSection, quizPromptData.deletedSectionIds);
                     onClose();
                   }}
                   className="text-xs bg-amber-600 hover:bg-amber-700 text-white font-semibold flex items-center gap-1.5 shadow-xs"
