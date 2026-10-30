@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import confetti from 'canvas-confetti';
 import { Button } from '@/components/ui/button';
@@ -455,12 +455,18 @@ function PublicFormContent() {
       setQuizServerTime(data.serverTime);
 
       // Reorder formData sections according to authoritative attempt questionOrder
+      const currentSections = formData?.sections || [];
+      const reorderedSections =
+        data.attempt?.questionOrder && data.attempt.questionOrder.length > 0
+          ? reorderSectionsByQuestionOrder(currentSections, data.attempt.questionOrder)
+          : currentSections;
+
       if (data.attempt?.questionOrder && data.attempt.questionOrder.length > 0) {
         setFormData((prev: any) => {
-          if (!prev || !prev.sections) return prev;
+          if (!prev) return prev;
           return {
             ...prev,
-            sections: reorderSectionsByQuestionOrder(prev.sections, data.attempt.questionOrder),
+            sections: reorderedSections,
           };
         });
       }
@@ -494,23 +500,27 @@ function PublicFormContent() {
           },
         });
       } else {
-        if (data.attempt.currentQuestionId && formData?.sections) {
-          const targetSecIdx = formData.sections.findIndex((sec: any) =>
+        if (data.attempt.currentQuestionId && reorderedSections.length > 0) {
+          const targetSecIdx = reorderedSections.findIndex((sec: any) =>
             sec.questions?.some((q: any) => q.id === data.attempt.currentQuestionId)
           );
           if (targetSecIdx !== -1) {
             setCurrentSectionIndex(targetSecIdx);
           } else if (
             typeof data.attempt.currentQuestionIndex === 'number' &&
-            data.attempt.currentQuestionIndex < formData.sections.length
+            data.attempt.currentQuestionIndex < reorderedSections.length
           ) {
             setCurrentSectionIndex(data.attempt.currentQuestionIndex);
+          } else {
+            setCurrentSectionIndex(0);
           }
         } else if (
           typeof data.attempt.currentQuestionIndex === 'number' &&
-          data.attempt.currentQuestionIndex < (formData?.sections?.length || 0)
+          data.attempt.currentQuestionIndex < (reorderedSections?.length || 0)
         ) {
           setCurrentSectionIndex(data.attempt.currentQuestionIndex);
+        } else {
+          setCurrentSectionIndex(0);
         }
       }
 
@@ -991,10 +1001,19 @@ function PublicFormContent() {
     );
   }
 
-  const { theme, sections, settings } = formData;
+  const effectiveSections = useMemo(() => {
+    if (!formData?.sections) return [];
+    if (formData.isQuiz && activeQuizAttempt?.questionOrder && activeQuizAttempt.questionOrder.length > 0) {
+      return reorderSectionsByQuestionOrder(formData.sections, activeQuizAttempt.questionOrder);
+    }
+    return formData.sections;
+  }, [formData?.sections, formData?.isQuiz, activeQuizAttempt?.questionOrder]);
+
+  const { theme, settings } = formData;
+  const sections = effectiveSections;
   const currentSection = sections[currentSectionIndex] || sections[0];
   const isLastSection = currentSectionIndex === sections.length - 1;
-  const questionsInCurrentSection = currentSection.questions || [];
+  const questionsInCurrentSection = currentSection?.questions || [];
 
   const isCattleSurvey = Boolean(
     formData?.title?.includes('Cattle Owner') ||
@@ -1009,7 +1028,7 @@ function PublicFormContent() {
     )
   );
 
-  const allFormQuestions = (formData?.sections || []).flatMap((s: any) => s.questions || []);
+  const allFormQuestions = (sections || []).flatMap((s: any) => s.questions || []);
 
   const societyQuestions = allFormQuestions.filter((q: any) =>
     q.title.includes('Society') ||

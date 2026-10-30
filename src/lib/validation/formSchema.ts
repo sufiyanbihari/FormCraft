@@ -27,6 +27,7 @@ export const rawFormSettingsShape = {
   closedMessage: z.string().optional(),
   showProgressBar: z.boolean().optional(),
   shuffleQuestions: z.boolean().optional(),
+  shuffleQuestionOrder: z.boolean().optional(),
   confirmationMessage: z.string().optional(),
   allowMultipleSubmissions: z.boolean().optional(),
   requireAuth: z.boolean().optional(),
@@ -185,8 +186,30 @@ export function validateBothTimersConstraint(
   }
 }
 
-export const formSettingsSchema = baseFormSettingsSchema.superRefine(validateBothTimersConstraint);
-export const partialFormSettingsSchema = z.object(rawFormSettingsShape).superRefine(validateBothTimersConstraint);
+export const formSettingsSchema = baseFormSettingsSchema
+  .transform((data: any) => {
+    if (data && data.shuffleQuestionOrder !== undefined) {
+      if (data.shuffleQuestions === undefined) {
+        data.shuffleQuestions = data.shuffleQuestionOrder;
+      }
+      delete data.shuffleQuestionOrder;
+    }
+    return data;
+  })
+  .superRefine(validateBothTimersConstraint);
+
+export const partialFormSettingsSchema = z
+  .object(rawFormSettingsShape)
+  .transform((data: any) => {
+    if (data && data.shuffleQuestionOrder !== undefined) {
+      if (data.shuffleQuestions === undefined) {
+        data.shuffleQuestions = data.shuffleQuestionOrder;
+      }
+      delete data.shuffleQuestionOrder;
+    }
+    return data;
+  })
+  .superRefine(validateBothTimersConstraint);
 
 export const createFormSchema = z.object({
   title: z.string().min(1, 'Form title is required').max(200).default('Untitled form'),

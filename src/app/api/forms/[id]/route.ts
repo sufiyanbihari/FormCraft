@@ -162,6 +162,12 @@ export async function PATCH(
 
     // Support aliases and calculate editingWindowMinutes
     if (body?.settings) {
+      if (body.settings.shuffleQuestionOrder !== undefined) {
+        if (body.settings.shuffleQuestions === undefined) {
+          body.settings.shuffleQuestions = body.settings.shuffleQuestionOrder;
+        }
+        delete body.settings.shuffleQuestionOrder;
+      }
       if (body.settings.maxEdits !== undefined && body.settings.maxEditCount === undefined) {
         body.settings.maxEditCount = body.settings.maxEdits;
       }
@@ -260,12 +266,15 @@ export async function PATCH(
           newDefaultPointsValue = settings.quizDefaultPoints;
         }
 
+        const prismaSettings = { ...settings };
+        delete (prismaSettings as any).shuffleQuestionOrder;
+
         await tx.formSettings.upsert({
           where: { formId: id },
-          update: settings,
+          update: prismaSettings,
           create: {
             formId: id,
-            ...settings,
+            ...prismaSettings,
           },
         });
       }
