@@ -199,14 +199,22 @@ export async function POST(
       },
     });
 
+    const isRepublish = nextVersionNumber > 1 || form.status === 'PUBLISHED';
+    const message = isRepublish ? 'Form republished successfully' : 'Form published successfully';
+
     return NextResponse.json({
-      message: 'Form published successfully',
+      success: true,
+      message,
       form: result.form,
       version: result.version,
       publicUrl: `/f/${result.form.publicId}`,
+      publishedUrl: `/f/${result.form.publicId}`,
+      publishedVersion: result.version.versionNumber,
+      isRepublish,
     });
   } catch (error) {
     console.error('Failed to publish form:', error);
-    return NextResponse.json({ error: 'Failed to publish form' }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Failed to publish form';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

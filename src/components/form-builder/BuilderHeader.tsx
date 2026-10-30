@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Check,
   Database,
+  Loader2,
 } from 'lucide-react';
 
 interface BuilderHeaderProps {
@@ -36,6 +37,7 @@ interface BuilderHeaderProps {
   lookupCount?: number;
   onOpenShare?: () => void;
   onPublish: () => void;
+  isPublishing?: boolean;
   isPublished: boolean;
   publicId: string;
   responseCount: number;
@@ -57,6 +59,7 @@ export default function BuilderHeader({
   lookupCount,
   onOpenShare,
   onPublish,
+  isPublishing = false,
   isPublished,
   publicId,
   responseCount,
@@ -209,11 +212,21 @@ export default function BuilderHeader({
           <Button
             size="sm"
             onClick={onPublish}
-            className="h-9 rounded-full text-white font-medium shadow-sm px-4"
+            disabled={isPublishing}
+            className="h-9 rounded-full text-white font-medium shadow-sm px-4 disabled:opacity-75 transition-all cursor-pointer"
             style={{ backgroundColor: primaryColor }}
           >
-            <Send className="h-3.5 w-3.5 mr-1.5" />
-            {isPublished ? 'Republish' : 'Publish'}
+            {isPublishing ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                {isPublished ? 'Republishing...' : 'Publishing...'}
+              </>
+            ) : (
+              <>
+                <Send className="h-3.5 w-3.5 mr-1.5" />
+                {isPublished ? 'Republish' : 'Publish'}
+              </>
+            )}
           </Button>
         </div>
       </div>

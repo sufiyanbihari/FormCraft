@@ -30,7 +30,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { Loader2, Sparkles, Check, Send } from 'lucide-react';
+import { Loader2, Sparkles, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { isLikelyImageSource } from '@/lib/utils';
 
 function FormBuilderContent() {
@@ -64,8 +64,19 @@ function FormBuilderContent() {
   const [isLookupOpen, setIsLookupOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [lookupMappings, setLookupMappings] = useState<any[]>([]);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Toast Notification State & Timeout Ref
+  interface ToastNotification {
+    title?: string;
+    message: string;
+    type?: 'success' | 'error' | 'info';
+    duration?: number;
+  }
+  const [toastNotification, setToastNotification] = useState<ToastNotification | null>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const [isLoading, setIsLoading] = useState(true);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [brokenBanner, setBrokenBanner] = useState(false);
 
   // Undo / Redo Command History
@@ -75,10 +86,38 @@ function FormBuilderContent() {
   const [canRedo, setCanRedo] = useState(false);
   const isUndoRedoAction = useRef(false);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
-  };
+  const showToast = useCallback(
+    (input: string | ToastNotification, duration = 4000) => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = null;
+      }
+
+      const notification: ToastNotification =
+        typeof input === 'string'
+          ? { message: input, type: 'info' }
+          : { ...input, type: input.type || 'info' };
+
+      setToastNotification(notification);
+
+      const effectiveDuration =
+        notification.duration || (notification.type === 'error' ? 6000 : duration);
+
+      toastTimeoutRef.current = setTimeout(() => {
+        setToastNotification(null);
+        toastTimeoutRef.current = null;
+      }, effectiveDuration);
+    },
+    []
+  );
+
+  const dismissToast = useCallback(() => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+    setToastNotification(null);
+  }, []);
 
   const updateHistory = (snapshot: any) => {
     if (isUndoRedoAction.current) return;
@@ -291,7 +330,7 @@ function FormBuilderContent() {
     await Promise.all(promises);
   }, [saveQuestionDeltaToServer]);
 
-  // Clean up question timers on unmount
+  // Clean up question and toast timers on unmount
   useEffect(() => {
     return () => {
       for (const qId of Object.keys(questionSaveTimersRef.current)) {
@@ -299,6 +338,9 @@ function FormBuilderContent() {
       }
       if (defaultPointsSaveTimerRef.current) {
         clearTimeout(defaultPointsSaveTimerRef.current);
+      }
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
       }
     };
   }, []);
@@ -861,7 +903,14 @@ function FormBuilderContent() {
 
   // Publish Form: Flush pending saves, sync questions atomically, and publish
   const handlePublish = async () => {
+    // Prevent duplicate publishing requests
+    if (isPublishing) return;
+
+    const isRepublish = form?.status === 'PUBLISHED';
+
     try {
+      setIsPublishing(true);
+
       if (saveTimeout.current) {
         clearTimeout(saveTimeout.current);
         saveTimeout.current = null;
@@ -896,23 +945,87 @@ function FormBuilderContent() {
             quizPoints: q.quizPoints,
             quizAnswer: q.quizAnswer,
             quizExplanation: q.quizExplanation,
+            timeLimitSeconds: q.timeLimitSeconds,
             options: q.options,
           })),
         }),
       });
 
-      const data = await res.json();
-      if (res.ok) {
-        setForm((prev: any) => ({ ...prev, status: 'PUBLISHED' }));
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && (data.success || data.form)) {
+        setForm((prev: any) => ({
+          ...prev,
+          status: 'PUBLISHED',
+          publishedVersionId: data.version?.id || prev?.publishedVersionId,
+        }));
         setSaveStatus('saved');
-        showToast('🎉 Form published! Anyone with the link can respond.');
+
+        if (isRepublish) {
+          showToast({
+            title: 'Form Republished Successfully',
+            message:
+              'Your changes have been published successfully. Respondents can now access the updated form.',
+            type: 'success',
+            duration: 5000,
+          });
+        } else {
+          showToast({
+            title: 'Form Published Successfully',
+            message: 'Your form is now published and ready to receive responses.',
+            type: 'success',
+            duration: 5000,
+          });
+        }
+      } else if (res.status === 401) {
+        setSaveStatus('error');
+        showToast({
+          title: 'Authentication Required',
+          message: 'Your session has expired. Please sign in again to publish.',
+          type: 'error',
+          duration: 6000,
+        });
+      } else if (res.status === 403) {
+        setSaveStatus('error');
+        showToast({
+          title: 'Access Denied',
+          message: data.error || 'You do not have permission to publish this form.',
+          type: 'error',
+          duration: 6000,
+        });
+      } else if (res.status === 400) {
+        setSaveStatus('error');
+        showToast({
+          title: 'Publish Validation Failed',
+          message:
+            data.error || 'Cannot publish form. Please ensure at least one question exists.',
+          type: 'error',
+          duration: 6000,
+        });
       } else {
         setSaveStatus('error');
-        showToast(data.error || 'Failed to publish form');
+        showToast({
+          title: 'Publish Failed',
+          message:
+            data.error || 'An unexpected error occurred while publishing. Please try again.',
+          type: 'error',
+          duration: 6000,
+        });
       }
-    } catch {
+    } catch (err: any) {
+      console.error('Publish error:', err);
       setSaveStatus('error');
-      showToast('Error publishing form');
+      showToast({
+        title: 'Publish Failed',
+        message:
+          err?.message && err.message !== 'Failed to fetch'
+            ? err.message
+            : 'Network error: Unable to reach the server. Please check your connection and try again.',
+        type: 'error',
+        duration: 6000,
+      });
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -946,10 +1059,66 @@ function FormBuilderContent() {
       }}
     >
       {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-gray-900 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-sm animate-in fade-in slide-in-from-bottom-4">
-          <Sparkles className="h-4 w-4 text-purple-400" />
-          <span>{toastMessage}</span>
+      {toastNotification && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 max-w-sm sm:max-w-md w-auto animate-in fade-in slide-in-from-bottom-4 duration-300"
+        >
+          {toastNotification.title ? (
+            <div
+              className={`px-4 py-3.5 rounded-2xl shadow-2xl flex items-start gap-3 text-sm backdrop-blur-md border ${
+                toastNotification.type === 'success'
+                  ? 'bg-gray-900/95 dark:bg-gray-900/95 text-white border-emerald-500/30 shadow-emerald-950/20'
+                  : toastNotification.type === 'error'
+                  ? 'bg-gray-900/95 dark:bg-gray-900/95 text-white border-red-500/30 shadow-red-950/20'
+                  : 'bg-gray-900/95 dark:bg-gray-900/95 text-white border-gray-700/50 shadow-black/20'
+              }`}
+            >
+              {toastNotification.type === 'success' && (
+                <div className="p-1 rounded-full bg-emerald-500/20 text-emerald-400 shrink-0 mt-0.5">
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+              )}
+              {toastNotification.type === 'error' && (
+                <div className="p-1 rounded-full bg-red-500/20 text-red-400 shrink-0 mt-0.5">
+                  <AlertCircle className="h-4 w-4" />
+                </div>
+              )}
+              {toastNotification.type === 'info' && (
+                <div className="p-1 rounded-full bg-purple-500/20 text-purple-400 shrink-0 mt-0.5">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+              )}
+
+              <div className="flex-1 min-w-0 pr-2">
+                <h4
+                  className={`font-bold text-sm tracking-tight ${
+                    toastNotification.type === 'error' ? 'text-red-300' : 'text-white'
+                  }`}
+                >
+                  {toastNotification.title}
+                </h4>
+                <p className="text-xs text-gray-300 mt-1 leading-relaxed">
+                  {toastNotification.message}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={dismissToast}
+                aria-label="Dismiss notification"
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors shrink-0 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="bg-gray-900/95 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-sm border border-gray-800">
+              <Sparkles className="h-4 w-4 text-purple-400 shrink-0" />
+              <span>{toastNotification.message}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -974,6 +1143,7 @@ function FormBuilderContent() {
         lookupCount={lookupMappings.length}
         onOpenShare={() => setIsShareOpen(true)}
         onPublish={handlePublish}
+        isPublishing={isPublishing}
         isPublished={form.status === 'PUBLISHED'}
         publicId={form.publicId}
         responseCount={form._count?.submissions || 0}
