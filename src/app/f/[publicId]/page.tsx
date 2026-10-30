@@ -49,6 +49,7 @@ import { useAuth } from '@/lib/auth/useAuth';
 import { uploadFile } from '@/lib/storage/clientUpload';
 import QuizTimerBar from '@/components/quiz/QuizTimerBar';
 import QuizStartCard from '@/components/quiz/QuizStartCard';
+import { reorderSectionsByQuestionOrder } from '@/lib/quiz/quizShuffle';
 
 function isDarkColor(hexColor?: string): boolean {
   if (!hexColor || !hexColor.startsWith('#')) return true;
@@ -330,22 +331,6 @@ function PublicFormContent() {
         setClosedReason(data.error || 'This form does not exist or has not been published.');
       } else {
         let loadedForm = data.form;
-        if (loadedForm?.settings?.shuffleQuestions && loadedForm.sections) {
-          loadedForm = {
-            ...loadedForm,
-            sections: loadedForm.sections.map((sec: any) => {
-              const nonInteractiveTypes = ['SECTION_HEADER', 'TEXT_BLOCK', 'IMAGE_BLOCK', 'VIDEO_EMBED'];
-              const headers = sec.questions.filter((q: any) => nonInteractiveTypes.includes(q.type));
-              const interactive = sec.questions.filter((q: any) => !nonInteractiveTypes.includes(q.type));
-              // Stable randomized order for this session
-              const shuffled = [...interactive].sort(() => Math.random() - 0.5);
-              return {
-                ...sec,
-                questions: [...headers, ...shuffled],
-              };
-            }),
-          };
-        }
         setFormData(loadedForm);
         setIsClosed(data.isClosed);
         setClosedReason(data.closedReason || '');
@@ -378,6 +363,18 @@ function PublicFormContent() {
                   setActiveQuizAttempt(attData.attempt);
                   setQuizServerTime(attData.serverTime);
 
+                  // Reorder sections according to authoritative persisted attempt questionOrder
+                  if (attData.attempt.questionOrder && attData.attempt.questionOrder.length > 0) {
+                    loadedForm = {
+                      ...loadedForm,
+                      sections: reorderSectionsByQuestionOrder(
+                        loadedForm.sections,
+                        attData.attempt.questionOrder
+                      ),
+                    };
+                    setFormData(loadedForm);
+                  }
+
                   if (attData.attempt.status === 'COMPLETED' || attData.attempt.status === 'TIMED_OUT') {
                     setIsSubmitted(true);
                     setSubmissionResult({
@@ -399,7 +396,22 @@ function PublicFormContent() {
                     if (attData.attempt.savedAnswers) {
                       setAnswers(attData.attempt.savedAnswers);
                     }
-                    if (typeof attData.attempt.currentQuestionIndex === 'number') {
+                    if (attData.attempt.currentQuestionId && loadedForm.sections) {
+                      const targetSecIdx = loadedForm.sections.findIndex((sec: any) =>
+                        sec.questions?.some((q: any) => q.id === attData.attempt.currentQuestionId)
+                      );
+                      if (targetSecIdx !== -1) {
+                        setCurrentSectionIndex(targetSecIdx);
+                      } else if (
+                        typeof attData.attempt.currentQuestionIndex === 'number' &&
+                        attData.attempt.currentQuestionIndex < loadedForm.sections.length
+                      ) {
+                        setCurrentSectionIndex(attData.attempt.currentQuestionIndex);
+                      }
+                    } else if (
+                      typeof attData.attempt.currentQuestionIndex === 'number' &&
+                      attData.attempt.currentQuestionIndex < (loadedForm.sections?.length || 0)
+                    ) {
                       setCurrentSectionIndex(attData.attempt.currentQuestionIndex);
                     }
                   }
@@ -442,6 +454,17 @@ function PublicFormContent() {
       setActiveQuizAttempt(data.attempt);
       setQuizServerTime(data.serverTime);
 
+      // Reorder formData sections according to authoritative attempt questionOrder
+      if (data.attempt?.questionOrder && data.attempt.questionOrder.length > 0) {
+        setFormData((prev: any) => {
+          if (!prev || !prev.sections) return prev;
+          return {
+            ...prev,
+            sections: reorderSectionsByQuestionOrder(prev.sections, data.attempt.questionOrder),
+          };
+        });
+      }
+
       // Pre-fill identity question if one is configured in form
       if (formData?.settings?.quizIdentityQuestionId) {
         setAnswers((prev) => ({
@@ -470,8 +493,25 @@ function PublicFormContent() {
             durationSeconds: data.attempt.durationSeconds,
           },
         });
-      } else if (typeof data.attempt.currentQuestionIndex === 'number') {
-        setCurrentSectionIndex(data.attempt.currentQuestionIndex);
+      } else {
+        if (data.attempt.currentQuestionId && formData?.sections) {
+          const targetSecIdx = formData.sections.findIndex((sec: any) =>
+            sec.questions?.some((q: any) => q.id === data.attempt.currentQuestionId)
+          );
+          if (targetSecIdx !== -1) {
+            setCurrentSectionIndex(targetSecIdx);
+          } else if (
+            typeof data.attempt.currentQuestionIndex === 'number' &&
+            data.attempt.currentQuestionIndex < formData.sections.length
+          ) {
+            setCurrentSectionIndex(data.attempt.currentQuestionIndex);
+          }
+        } else if (
+          typeof data.attempt.currentQuestionIndex === 'number' &&
+          data.attempt.currentQuestionIndex < (formData?.sections?.length || 0)
+        ) {
+          setCurrentSectionIndex(data.attempt.currentQuestionIndex);
+        }
       }
 
       return { success: true };
@@ -1293,6 +1333,23 @@ function PublicFormContent() {
       const prevIdx = newHistory[newHistory.length - 1];
       setSectionHistory(newHistory);
       setCurrentSectionIndex(prevIdx);
+      if (formData?.isQuiz && activeQuizAttempt?.id && activeQuizAttempt.status === 'IN_PROGRESS') {
+        const fromQId = questionsInCurrentSection[0]?.id;
+        const targetQId = sections[prevIdx]?.questions?.[0]?.id;
+        if (targetQId) {
+          fetch(`/api/public/forms/${publicId}/quiz/navigate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              attemptId: activeQuizAttempt.id,
+              fromQuestionId: fromQId,
+              targetQuestionId: targetQId,
+              answerValue: fromQId ? answers[fromQId] : undefined,
+              direction: 'PREV',
+            }),
+          }).catch((err) => console.warn('Quiz navigate sync error:', err));
+        }
+      }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
@@ -1761,8 +1818,16 @@ function PublicFormContent() {
             participantIdentity={activeQuizAttempt.participantIdentity}
             participantName={activeQuizAttempt.participantName}
             navigationPolicy={formData.settings?.quizNavigationPolicy}
-            currentQuestionIndex={currentSectionIndex}
-            totalQuestions={sections.length}
+            currentQuestionIndex={
+              activeQuizAttempt.questionOrder && activeQuizAttempt.questionOrder.length > 0 && questionsInCurrentSection[0]?.id
+                ? Math.max(0, activeQuizAttempt.questionOrder.indexOf(questionsInCurrentSection[0].id))
+                : currentSectionIndex
+            }
+            totalQuestions={
+              activeQuizAttempt.questionOrder && activeQuizAttempt.questionOrder.length > 0
+                ? activeQuizAttempt.questionOrder.length
+                : sections.length
+            }
             onOverallTimeout={handleOverallTimeout}
             onQuestionTimeout={handleQuestionTimeout}
           />
@@ -1912,6 +1977,22 @@ function PublicFormContent() {
             const lookupMeta = getFieldLookupMeta(q.id);
             const triggerMapping = (formData?.lookupMappings || []).find((m: any) => m.triggerQuestionId === q.id);
 
+            const qSeqIndex =
+              formData.isQuiz && activeQuizAttempt?.questionOrder
+                ? activeQuizAttempt.questionOrder.indexOf(q.id)
+                : -1;
+            const totalQuizQuestions = activeQuizAttempt?.questionOrder?.length || 0;
+
+            let displayTitle = q.title;
+            if (qSeqIndex !== -1 && totalQuizQuestions > 0) {
+              if (/^Question\s+\d+([:.\s-]+|$)/i.test(displayTitle)) {
+                displayTitle = displayTitle.replace(
+                  /^Question\s+\d+([:.\s-]*)/i,
+                  `Question ${qSeqIndex + 1}$1`
+                );
+              }
+            }
+
           return (
             <div
               key={q.id}
@@ -1920,8 +2001,20 @@ function PublicFormContent() {
               }`}
             >
               <div>
+                {qSeqIndex !== -1 && totalQuizQuestions > 0 && (
+                  <div className="flex items-center gap-2 mb-1.5 text-xs font-bold text-sky-700 dark:text-sky-300">
+                    <span className="bg-sky-100 dark:bg-sky-900/60 px-2 py-0.5 rounded border border-sky-200 dark:border-sky-800">
+                      Question {qSeqIndex + 1} of {totalQuizQuestions}
+                    </span>
+                  </div>
+                )}
                 <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-100">
-                  {q.title}{' '}
+                  {qSeqIndex !== -1 && totalQuizQuestions > 0 && !/^Question\s+\d+/i.test(q.title) && (
+                    <span className="text-purple-600 dark:text-purple-400 font-bold mr-1.5">
+                      {qSeqIndex + 1}.
+                    </span>
+                  )}
+                  {displayTitle}{' '}
                   {q.isRequired && <span className="text-red-500 font-bold">*</span>}
                 </h3>
                 {q.description && (

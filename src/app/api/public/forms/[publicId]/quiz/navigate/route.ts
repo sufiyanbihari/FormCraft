@@ -14,7 +14,15 @@ export async function POST(
     const { publicId } = await params;
 
     const body = await request.json();
-    const parseResult = quizNavigateSchema.safeParse(body);
+    const effectiveBody = {
+      ...body,
+      currentAnswer:
+        body.currentAnswer ||
+        (body.fromQuestionId
+          ? { questionId: body.fromQuestionId, value: body.answerValue }
+          : undefined),
+    };
+    const parseResult = quizNavigateSchema.safeParse(effectiveBody);
     if (!parseResult.success) {
       return NextResponse.json(
         { error: 'Invalid navigation data', details: parseResult.error.flatten() },
@@ -76,12 +84,21 @@ export async function POST(
     }
 
     const allQuestions = form.sections.flatMap((s) => s.questions);
-    const targetQIndex = allQuestions.findIndex((q) => q.id === targetQuestionId);
-    const targetQ = allQuestions[targetQIndex];
+    const targetQ = allQuestions.find((q) => q.id === targetQuestionId);
 
     if (!targetQ) {
       return NextResponse.json({ error: 'Target question not found' }, { status: 404 });
     }
+
+    const questionOrder =
+      attempt.questionOrder && attempt.questionOrder.length > 0
+        ? attempt.questionOrder
+        : allQuestions.map((q) => q.id);
+
+    const targetQIndex =
+      questionOrder.indexOf(targetQuestionId) !== -1
+        ? questionOrder.indexOf(targetQuestionId)
+        : allQuestions.findIndex((q) => q.id === targetQuestionId);
 
     const navigationPolicy = form.settings?.quizNavigationPolicy || 'BACKWARD_ENABLED';
     const lockedIds = [...attempt.lockedQuestionIds];
@@ -180,6 +197,7 @@ export async function POST(
         currentQuestionDeadline: updated.currentQuestionDeadline,
         lockedQuestionIds: updated.lockedQuestionIds,
         savedAnswers: updated.savedAnswers,
+        questionOrder,
         status: updated.status,
       },
       serverTime: now.toISOString(),

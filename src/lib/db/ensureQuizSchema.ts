@@ -84,6 +84,7 @@ const MIGRATION_STATEMENTS = [
     "savedAnswers" JSONB NOT NULL DEFAULT '{}'::jsonb,
     "questionTiming" JSONB NOT NULL DEFAULT '{}'::jsonb,
     "lockedQuestionIds" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    "questionOrder" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     "submissionId" TEXT REFERENCES "form_submissions"("id") ON DELETE SET NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -92,6 +93,9 @@ const MIGRATION_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS "quiz_attempts_formId_status_idx" ON "quiz_attempts"("formId", "status")`,
   `CREATE INDEX IF NOT EXISTS "quiz_attempts_formId_participantIdentity_idx" ON "quiz_attempts"("formId", "participantIdentity")`,
   `CREATE INDEX IF NOT EXISTS "quiz_attempts_formId_startedAt_idx" ON "quiz_attempts"("formId", "startedAt")`,
+
+  // QuizAttempt: Per-attempt shuffled question sequence persistence
+  `ALTER TABLE "quiz_attempts" ADD COLUMN IF NOT EXISTS "questionOrder" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,
 ];
 
 import { ensureResponseControlSchema } from './ensureResponseControlSchema';

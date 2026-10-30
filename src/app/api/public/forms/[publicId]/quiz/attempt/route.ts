@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { startQuizAttemptSchema } from '@/lib/validation/quizAttemptSchema';
 import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
 import { reconcileAttemptTimeout } from '@/lib/quiz/quizAttemptService';
+import { generateQuizQuestionOrder } from '@/lib/quiz/quizShuffle';
 import { getAuthUserFromRequest } from '@/lib/auth/session';
 
 export async function POST(
@@ -111,7 +112,12 @@ export async function POST(
     }
 
     const allQuestions = form.sections.flatMap((s) => s.questions);
-    const firstQuestion = allQuestions[0] || null;
+    const questionMap = new Map(allQuestions.map((q) => [q.id, q]));
+
+    // Generate authoritative question order for a new attempt (shuffled if settings.shuffleQuestions is true)
+    const questionOrder = generateQuizQuestionOrder(form);
+    const firstQuestionId = questionOrder[0];
+    const firstQuestion = firstQuestionId ? questionMap.get(firstQuestionId) || null : allQuestions[0] || null;
 
     // Concurrency-safe attempt creation or resuming in transaction
     const attempt = await prisma.$transaction(async (tx) => {
@@ -126,6 +132,14 @@ export async function POST(
       });
 
       if (existing) {
+        // Backfill legacy attempts if questionOrder was not stored
+        if ((!existing.questionOrder || existing.questionOrder.length === 0) && allQuestions.length > 0) {
+          const defaultOrder = allQuestions.map((q) => q.id);
+          return await tx.quizAttempt.update({
+            where: { id: existing.id },
+            data: { questionOrder: defaultOrder },
+          });
+        }
         return existing;
       }
 
@@ -170,12 +184,18 @@ export async function POST(
           savedAnswers: {},
           questionTiming: initialQuestionTiming,
           lockedQuestionIds: [],
+          questionOrder,
         },
       });
     });
 
     // Reconcile timeout if attempt already existed
     const activeAttempt = await reconcileAttemptTimeout(attempt, form);
+
+    const safeQuestionOrder =
+      activeAttempt.questionOrder && activeAttempt.questionOrder.length > 0
+        ? activeAttempt.questionOrder
+        : form.sections.flatMap((s) => s.questions.map((q) => q.id));
 
     return NextResponse.json({
       attempt: {
@@ -191,6 +211,7 @@ export async function POST(
         currentQuestionDeadline: activeAttempt.currentQuestionDeadline,
         savedAnswers: activeAttempt.savedAnswers,
         lockedQuestionIds: activeAttempt.lockedQuestionIds,
+        questionOrder: safeQuestionOrder,
         completedAt: activeAttempt.completedAt,
         earnedScore: activeAttempt.earnedScore,
         maxScore: activeAttempt.maxScore,
@@ -262,6 +283,20 @@ export async function GET(
     // Authoritative timeout reconciliation
     const reconciled = await reconcileAttemptTimeout(attempt, form);
 
+    const allQuestions = form.sections.flatMap((s) => s.questions);
+    const safeQuestionOrder =
+      reconciled.questionOrder && reconciled.questionOrder.length > 0
+        ? reconciled.questionOrder
+        : allQuestions.map((q) => q.id);
+
+    // Backfill legacy attempts if empty
+    if ((!reconciled.questionOrder || reconciled.questionOrder.length === 0) && safeQuestionOrder.length > 0) {
+      await prisma.quizAttempt.update({
+        where: { id: reconciled.id },
+        data: { questionOrder: safeQuestionOrder },
+      }).catch(() => {});
+    }
+
     return NextResponse.json({
       attempt: {
         id: reconciled.id,
@@ -276,6 +311,7 @@ export async function GET(
         currentQuestionDeadline: reconciled.currentQuestionDeadline,
         savedAnswers: reconciled.savedAnswers,
         lockedQuestionIds: reconciled.lockedQuestionIds,
+        questionOrder: safeQuestionOrder,
         completedAt: reconciled.completedAt,
         earnedScore: reconciled.earnedScore,
         maxScore: reconciled.maxScore,

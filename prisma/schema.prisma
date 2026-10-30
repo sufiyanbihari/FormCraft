@@ -512,6 +512,7 @@ model QuizAttempt {
   savedAnswers             Json      @default("{}")
   questionTiming           Json      @default("{}")
   lockedQuestionIds        String[]  @default([])
+  questionOrder            String[]  @default([])
   submissionId             String?
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt

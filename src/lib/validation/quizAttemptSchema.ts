@@ -14,6 +14,8 @@ export const saveQuizAnswerSchema = z.object({
 export const quizNavigateSchema = z.object({
   attemptId: z.string().min(1, 'Attempt ID is required'),
   targetQuestionId: z.string().min(1, 'Target Question ID is required'),
+  fromQuestionId: z.string().optional(),
+  answerValue: z.any().optional(),
   currentAnswer: z
     .object({
       questionId: z.string(),
