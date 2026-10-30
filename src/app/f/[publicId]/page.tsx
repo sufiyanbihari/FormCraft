@@ -285,6 +285,15 @@ function PublicFormContent() {
   const lookupSeqRef = useRef<Record<string, number>>({});
   const debounceTimerRef = useRef<Record<string, NodeJS.Timeout>>({});
 
+  // Memoized effective sections taking into account quiz questionOrder
+  const effectiveSections = useMemo(() => {
+    if (!formData?.sections) return [];
+    if (formData.isQuiz && activeQuizAttempt?.questionOrder && activeQuizAttempt.questionOrder.length > 0) {
+      return reorderSectionsByQuestionOrder(formData.sections, activeQuizAttempt.questionOrder);
+    }
+    return formData.sections;
+  }, [formData?.sections, formData?.isQuiz, activeQuizAttempt?.questionOrder]);
+
   // Repeatable Cattle Owners State
   interface CattleOwnerItem {
     id: string;
@@ -1000,14 +1009,6 @@ function PublicFormContent() {
       </div>
     );
   }
-
-  const effectiveSections = useMemo(() => {
-    if (!formData?.sections) return [];
-    if (formData.isQuiz && activeQuizAttempt?.questionOrder && activeQuizAttempt.questionOrder.length > 0) {
-      return reorderSectionsByQuestionOrder(formData.sections, activeQuizAttempt.questionOrder);
-    }
-    return formData.sections;
-  }, [formData?.sections, formData?.isQuiz, activeQuizAttempt?.questionOrder]);
 
   const { theme, settings } = formData;
   const sections = effectiveSections;
