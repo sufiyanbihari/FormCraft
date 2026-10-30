@@ -582,13 +582,21 @@ export async function POST(
       }
     }
 
+    const allowEditing = Boolean(settings?.allowResponseEditing);
+    const maxEdits = Number(settings?.maxEditCount) || 1;
+    const canEdit = allowEditing && maxEdits > 0;
+
     return NextResponse.json({
       message: (!form.isQuiz || isGradeReleased)
         ? settings?.confirmationMessage || 'Your response has been recorded.'
         : 'Your response has been recorded. Grades will be released after manual review.',
       submissionId: submission.id,
-      editToken: settings?.allowResponseEditing ? submission.editToken : undefined,
-      allowResponseEditing: Boolean(settings?.allowResponseEditing),
+      submittedAt: submission.submittedAt,
+      editToken: canEdit ? submission.editToken : undefined,
+      allowResponseEditing: allowEditing,
+      canEdit,
+      editCount: 0,
+      maxEditCount: maxEdits,
       restrictOneResponse: Boolean(settings?.restrictOneResponse),
       isGradeReleased: form.isQuiz ? isGradeReleased : true,
       score: quizResult,

@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { calculateEditingWindowMinutes } from '@/lib/validation/formSchema';
 
 export type DuplicateIdentifierMethod = 'AUTH_USER' | 'VERIFIED_EMAIL' | 'QUESTION_FIELD' | 'IP_ADDRESS';
 export type DuplicateRestrictionScope = 'ONCE_PER_FORM' | 'PERIODIC';
@@ -233,7 +234,7 @@ export async function checkDuplicateSubmission(
         respondentUserId: identity.identifier,
         ...(windowStart ? { submittedAt: { gte: windowStart } } : {}),
       },
-      select: { id: true, editToken: true, submittedAt: true, respondentUserId: true },
+      select: { id: true, editToken: true, submittedAt: true, respondentUserId: true, editCount: true },
       orderBy: { submittedAt: 'desc' },
     });
   } else if (identity.method === 'VERIFIED_EMAIL') {
@@ -243,7 +244,7 @@ export async function checkDuplicateSubmission(
         respondentEmail: { equals: identity.identifier, mode: 'insensitive' },
         ...(windowStart ? { submittedAt: { gte: windowStart } } : {}),
       },
-      select: { id: true, editToken: true, submittedAt: true, respondentUserId: true },
+      select: { id: true, editToken: true, submittedAt: true, respondentUserId: true, editCount: true },
       orderBy: { submittedAt: 'desc' },
     });
   } else if (identity.method === 'QUESTION_FIELD' && identity.questionId) {
@@ -258,7 +259,7 @@ export async function checkDuplicateSubmission(
           },
         },
       },
-      select: { id: true, editToken: true, submittedAt: true, respondentUserId: true },
+      select: { id: true, editToken: true, submittedAt: true, respondentUserId: true, editCount: true },
       orderBy: { submittedAt: 'desc' },
     });
   } else if (identity.method === 'IP_ADDRESS') {
@@ -268,7 +269,7 @@ export async function checkDuplicateSubmission(
         ipHash: identity.identifier,
         ...(windowStart ? { submittedAt: { gte: windowStart } } : {}),
       },
-      select: { id: true, editToken: true, submittedAt: true, respondentUserId: true },
+      select: { id: true, editToken: true, submittedAt: true, respondentUserId: true, editCount: true },
       orderBy: { submittedAt: 'desc' },
     });
   }
@@ -276,13 +277,29 @@ export async function checkDuplicateSubmission(
   if (existing) {
     const message = formatDuplicateErrorMessage(settings, identity);
     const allowEditing = Boolean(settings?.allowResponseEditing);
+    const maxEdits = Number(settings?.maxEditCount) || 1;
+    const currentEdits = Number(existing.editCount) || 0;
+
+    let windowMinutes = settings?.editingWindowMinutes;
+    if (!windowMinutes && settings?.editingTimeDuration) {
+      windowMinutes = calculateEditingWindowMinutes(settings.editingTimeDuration, settings.editingTimeUnit);
+    }
+    if (!windowMinutes || windowMinutes <= 0) {
+      windowMinutes = 1440;
+    }
+    const submissionTime = new Date(existing.submittedAt).getTime();
+    const expiryTime = submissionTime + windowMinutes * 60 * 1000;
+    const isWithinWindow = (now || new Date()).getTime() <= expiryTime;
+
+    const canEdit = allowEditing && isWithinWindow && currentEdits < maxEdits;
+
     return {
       isDuplicate: true,
       message,
       existingSubmissionId: existing.id,
       existingSubmittedAt: existing.submittedAt,
-      canEdit: allowEditing,
-      editToken: allowEditing ? existing.editToken : undefined,
+      canEdit,
+      editToken: canEdit ? existing.editToken : undefined,
     };
   }
 

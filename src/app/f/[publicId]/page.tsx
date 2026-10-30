@@ -1218,11 +1218,18 @@ function PublicFormContent() {
           setValidationError(data.error || 'Failed to update response');
         } else {
           setIsSubmitted(true);
+          const nextCanEdit = Boolean(data.canEdit);
+          const nextToken = nextCanEdit ? (data.editToken || activeEditToken) : undefined;
           setSubmissionResult({
             ...data,
-            editToken: activeEditToken,
-            message: 'Your response has been updated successfully.',
+            editToken: nextToken,
+            canEdit: nextCanEdit,
+            message: data.message || 'Your response has been updated successfully.',
           });
+          if (!nextCanEdit) {
+            setActiveEditToken(null);
+            setIsEditMode(false);
+          }
           confetti({
             particleCount: 80,
             spread: 70,
@@ -1287,11 +1294,18 @@ function PublicFormContent() {
         : formData?.settings?.allowResponseEditing
     );
 
-    const isOneResponseRestricted = Boolean(
-      submissionResult?.restrictOneResponse !== undefined
-        ? submissionResult.restrictOneResponse
-        : formData?.settings?.restrictOneResponse
+    const maxEdits = Number(submissionResult?.maxEditCount ?? formData?.settings?.maxEditCount ?? 1);
+    const completedEdits = Number(submissionResult?.editCount ?? 0);
+    const canEditResponse = Boolean(
+      submissionResult?.canEdit !== undefined
+        ? submissionResult.canEdit
+        : (
+            isResponseEditingAllowed &&
+            Boolean(submissionResult?.editToken) &&
+            completedEdits < maxEdits
+          )
     );
+    const showEditControls = canEditResponse && Boolean(submissionResult?.editToken);
 
     const effectiveBg =
       theme.backgroundColor && theme.backgroundColor !== '#f0ebf8'
@@ -1409,7 +1423,7 @@ function PublicFormContent() {
           )}
 
           {/* Controlled Response Editing Button */}
-          {submissionResult?.editToken && isResponseEditingAllowed && (
+          {showEditControls && (
             <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-2">
               <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                 <Button
@@ -1441,29 +1455,6 @@ function PublicFormContent() {
                 You can use this link to update your answers within the allowed editing window.
               </p>
             </div>
-          )}
-
-          {/* Link to submit another response only when response editing is allowed and duplicate prevention is not active */}
-          {isResponseEditingAllowed && !isOneResponseRestricted && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setAnswers({});
-                setOtherTextMap({});
-                if (!currentUserEmail) {
-                  setRespondentEmail('');
-                }
-                setIsSubmitted(false);
-                setIsEditMode(false);
-                setActiveEditToken(null);
-                setCurrentSectionIndex(0);
-                setSectionHistory([0]);
-              }}
-              className="text-xs"
-            >
-              <RotateCcw className="h-3.5 w-3.5 mr-1" /> Submit another response
-            </Button>
           )}
 
           <div className="flex items-center justify-center gap-2 pt-4 border-t border-gray-100 dark:border-gray-800">

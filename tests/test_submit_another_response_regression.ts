@@ -10,7 +10,7 @@ import { POST as quizFinalizeHandler } from '../src/app/api/public/forms/[public
 
 async function runRegressionTests() {
   console.log('========================================================================');
-  console.log('  Testing "Submit another response" visibility & response editing rules ');
+  console.log('  Testing "Submit another response" Removal & Response Editing Rules   ');
   console.log('========================================================================\n');
 
   // Setup test user
@@ -75,18 +75,9 @@ async function runRegressionTests() {
   // 1. Verify backend returns allowResponseEditing = false and no editToken
   assert.strictEqual(subData1.allowResponseEditing, false, 'allowResponseEditing must be false in response');
   assert.strictEqual(subData1.editToken, undefined, 'editToken must be undefined');
+  assert.strictEqual(subData1.canEdit, false, 'canEdit must be false');
 
-  // 2. Evaluate confirmation page button visibility logic
-  const isEditingAllowed1 = Boolean(
-    subData1.allowResponseEditing !== undefined ? subData1.allowResponseEditing : form1.settings?.allowResponseEditing
-  );
-  const isRestricted1 = Boolean(
-    subData1.restrictOneResponse !== undefined ? subData1.restrictOneResponse : form1.settings?.restrictOneResponse
-  );
-  const showSubmitAnother1 = isEditingAllowed1 && !isRestricted1;
-  assert.strictEqual(showSubmitAnother1, false, 'Submit another response button must be HIDDEN when allowResponseEditing is OFF');
-
-  // 3. Verify backend enforcement of editing route
+  // 2. Verify backend enforcement of editing route
   const subDb1 = await prisma.formSubmission.findUnique({ where: { id: subData1.submissionId } });
   const editAttemptReq = new NextRequest(
     `http://localhost/api/public/forms/${form1.publicId}/submissions/edit?editToken=${subDb1!.editToken}`,
@@ -94,7 +85,7 @@ async function runRegressionTests() {
   );
   const editAttemptRes = await getEditHandler(editAttemptReq, { params: Promise.resolve({ publicId: form1.publicId }) });
   assert.strictEqual(editAttemptRes.status, 403, 'Backend must reject editing with 403');
-  console.log('✓ TEST 1 PASSED: "Submit another response" button is HIDDEN when editing is OFF for regular forms\n');
+  console.log('✓ TEST 1 PASSED: Editing is OFF and "Submit another response" is NOT available\n');
 
   // ---------------------------------------------------------------------------
   // TEST 2: Regular Form with allowResponseEditing = ON and restrictOneResponse = OFF
@@ -110,6 +101,7 @@ async function runRegressionTests() {
         create: {
           allowResponseEditing: true,
           restrictOneResponse: false,
+          maxEditCount: 1,
         },
       },
       sections: {
@@ -144,17 +136,10 @@ async function runRegressionTests() {
   const subData2 = await subRes2.json();
 
   assert.strictEqual(subData2.allowResponseEditing, true);
-  assert.ok(subData2.editToken, 'editToken must be returned when editing is ON');
-
-  const isEditingAllowed2 = Boolean(
-    subData2.allowResponseEditing !== undefined ? subData2.allowResponseEditing : form2.settings?.allowResponseEditing
-  );
-  const isRestricted2 = Boolean(
-    subData2.restrictOneResponse !== undefined ? subData2.restrictOneResponse : form2.settings?.restrictOneResponse
-  );
-  const showSubmitAnother2 = isEditingAllowed2 && !isRestricted2;
-  assert.strictEqual(showSubmitAnother2, true, 'Submit another response button must be VISIBLE when editing is ON and duplicate prevention is OFF');
-  console.log('✓ TEST 2 PASSED: "Submit another response" button is VISIBLE when editing is ON & restrictOneResponse is OFF\n');
+  assert.ok(subData2.editToken, 'editToken must be returned when editing is ON and edits remain');
+  assert.strictEqual(subData2.canEdit, true, 'canEdit must be true on initial submission');
+  assert.strictEqual(subData2.editCount, 0, 'initial editCount is 0');
+  console.log('✓ TEST 2 PASSED: Initial submission successful, editToken returned, Submit another response removed\n');
 
   // ---------------------------------------------------------------------------
   // TEST 3: Regular Form with allowResponseEditing = ON and restrictOneResponse = ON
@@ -206,16 +191,8 @@ async function runRegressionTests() {
 
   assert.strictEqual(subData3.allowResponseEditing, true);
   assert.strictEqual(subData3.restrictOneResponse, true);
-
-  const isEditingAllowed3 = Boolean(
-    subData3.allowResponseEditing !== undefined ? subData3.allowResponseEditing : form3.settings?.allowResponseEditing
-  );
-  const isRestricted3 = Boolean(
-    subData3.restrictOneResponse !== undefined ? subData3.restrictOneResponse : form3.settings?.restrictOneResponse
-  );
-  const showSubmitAnother3 = isEditingAllowed3 && !isRestricted3;
-  assert.strictEqual(showSubmitAnother3, false, 'Submit another response button must be HIDDEN when duplicate prevention is ON');
-  console.log('✓ TEST 3 PASSED: "Submit another response" button is HIDDEN when restrictOneResponse is ON\n');
+  assert.strictEqual(subData3.canEdit, true);
+  console.log('✓ TEST 3 PASSED: Response recorded with duplicate restriction and response editing allowed\n');
 
   // ---------------------------------------------------------------------------
   // TEST 4: Quiz with allowResponseEditing = OFF
@@ -292,16 +269,7 @@ async function runRegressionTests() {
 
   assert.strictEqual(finData4.allowResponseEditing, false, 'Finalize response must return allowResponseEditing = false');
   assert.strictEqual(finData4.score.total, 10, 'Quiz scoring must remain accurate');
-
-  const isEditingAllowed4 = Boolean(
-    finData4.allowResponseEditing !== undefined ? finData4.allowResponseEditing : quiz4.settings?.allowResponseEditing
-  );
-  const isRestricted4 = Boolean(
-    finData4.restrictOneResponse !== undefined ? finData4.restrictOneResponse : quiz4.settings?.restrictOneResponse
-  );
-  const showSubmitAnother4 = isEditingAllowed4 && !isRestricted4;
-  assert.strictEqual(showSubmitAnother4, false, 'Submit another response button must be HIDDEN on Quiz confirmation when editing is OFF');
-  console.log('✓ TEST 4 PASSED: "Submit another response" button is HIDDEN on Quiz confirmation when editing is OFF\n');
+  console.log('✓ TEST 4 PASSED: Quiz finalized with accurate score and no editing allowed\n');
 
   // ---------------------------------------------------------------------------
   // TEST 5: Quiz with allowResponseEditing = ON and restrictOneResponse = OFF
@@ -376,16 +344,7 @@ async function runRegressionTests() {
 
   assert.strictEqual(finData5.allowResponseEditing, true);
   assert.strictEqual(finData5.score.total, 5);
-
-  const isEditingAllowed5 = Boolean(
-    finData5.allowResponseEditing !== undefined ? finData5.allowResponseEditing : quiz5.settings?.allowResponseEditing
-  );
-  const isRestricted5 = Boolean(
-    finData5.restrictOneResponse !== undefined ? finData5.restrictOneResponse : quiz5.settings?.restrictOneResponse
-  );
-  const showSubmitAnother5 = isEditingAllowed5 && !isRestricted5;
-  assert.strictEqual(showSubmitAnother5, true, 'Submit another response button must be VISIBLE on Quiz confirmation when editing is ON and duplicate prevention is OFF');
-  console.log('✓ TEST 5 PASSED: "Submit another response" button is VISIBLE on Quiz confirmation when editing is ON\n');
+  console.log('✓ TEST 5 PASSED: Quiz confirmed with scores and no "Submit another response" button\n');
 
   // ---------------------------------------------------------------------------
   // TEST 6: Static Code Verification of Confirmation Screen
@@ -394,20 +353,20 @@ async function runRegressionTests() {
   const pagePath = path.join(__dirname, '../src/app/f/[publicId]/page.tsx');
   const pageContent = fs.readFileSync(pagePath, 'utf-8');
 
-  // Verify dynamic check of allowResponseEditing and restrictOneResponse
+  // Verify that "Submit another response" is completely removed from the confirmation screen
   assert(
-    pageContent.includes('isResponseEditingAllowed && !isOneResponseRestricted'),
-    'page.tsx must guard "Submit another response" with isResponseEditingAllowed && !isOneResponseRestricted'
+    !pageContent.includes('Submit another response'),
+    'page.tsx must NOT contain "Submit another response"'
   );
   assert(
-    pageContent.includes('submissionResult?.allowResponseEditing !== undefined'),
-    'page.tsx must check submissionResult?.allowResponseEditing dynamically'
+    !pageContent.includes('isOneResponseRestricted'),
+    'page.tsx must NOT retain obsolete isOneResponseRestricted variable'
   );
   assert(
-    pageContent.includes('formData?.settings?.allowResponseEditing'),
-    'page.tsx must fallback to formData?.settings?.allowResponseEditing'
+    pageContent.includes('showEditControls'),
+    'page.tsx must use authoritative showEditControls for rendering edit controls'
   );
-  console.log('✓ TEST 6 PASSED: Verified static AST/code patterns in public form page\n');
+  console.log('✓ TEST 6 PASSED: Verified complete removal of "Submit another response" from confirmation screen\n');
 
   console.log('========================================================================');
   console.log(' ALL REGRESSION TESTS PASSED (6/6)!                                     ');

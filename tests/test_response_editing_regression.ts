@@ -39,6 +39,7 @@ async function createTestForm({
       ownerId,
       settings: settings ? { create: settings } : undefined,
     },
+    include: { settings: true },
   });
 
   const section = await prisma.formSection.create({
@@ -749,8 +750,182 @@ async function runResponseEditingRegressionTests() {
   assert.strictEqual(reloadedSettings?.maxEditCount, 3);
   console.log('  ✓ PASS: Legacy form loaded, normalized safely, and saved updated settings without errors.');
 
+  // ------------------------------------------------------------------------
+  // Requirement 12: Dynamic Edit Limit Logic & UI State (Issue 1)
+  // ------------------------------------------------------------------------
+  console.log('\n[TEST 12] Dynamic edit limit logic & UI visibility state transitions');
+
+  // Helper for computing UI visibility logic as done in page.tsx
+  function computeShowEditControls(submissionResult: any, formSettings: any) {
+    const isResponseEditingAllowed = Boolean(
+      submissionResult?.allowResponseEditing !== undefined
+        ? submissionResult.allowResponseEditing
+        : formSettings?.allowResponseEditing
+    );
+    const maxEdits = Number(submissionResult?.maxEditCount ?? formSettings?.maxEditCount ?? 1);
+    const completedEdits = Number(submissionResult?.editCount ?? 0);
+    const canEditResponse = Boolean(
+      submissionResult?.canEdit !== undefined
+        ? submissionResult.canEdit
+        : (
+            isResponseEditingAllowed &&
+            Boolean(submissionResult?.editToken) &&
+            completedEdits < maxEdits
+          )
+    );
+    return canEditResponse && Boolean(submissionResult?.editToken);
+  }
+
+  // 12.1: Case maxEditCount = 1
+  console.log('  -> Testing maxEditCount = 1 (1 edit allowed)...');
+  const { form: formL1, questions: qL1 } = await createTestForm({
+    title: 'Limit 1 Form',
+    ownerId: adminUser.id,
+    settings: {
+      allowResponseEditing: true,
+      editingAuthMethod: 'SECURE_EDIT_LINK',
+      editingWindowMode: 'WITHIN_WINDOW',
+      editingTimeDuration: 30,
+      editingTimeUnit: 'Minutes',
+      editingWindowMinutes: 30,
+      maxEditCount: 1,
+    },
+  });
+
+  // Initial submission (completedEdits = 0)
+  const initSubReqL1 = new NextRequest(`http://localhost:3000/api/public/forms/${formL1.publicId}/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answers: [{ questionId: qL1[0].id, value: 'Initial text' }] }),
+  });
+  const initSubResL1 = await publicSubmissionHandler(initSubReqL1, { params: Promise.resolve({ publicId: formL1.publicId }) });
+  const initSubDataL1 = await initSubResL1.json();
+  assert.strictEqual(initSubDataL1.canEdit, true, 'canEdit must be true on initial submission');
+  assert.strictEqual(initSubDataL1.editCount, 0, 'editCount must be 0 on initial submission');
+  assert.strictEqual(initSubDataL1.maxEditCount, 1, 'maxEditCount must be 1');
+  assert.ok(initSubDataL1.editToken, 'editToken must be returned');
+  assert.strictEqual(computeShowEditControls(initSubDataL1, formL1.settings), true, 'Edit link MUST be visible initially');
+
+  // Edit #1 (completedEdits becomes 1 == maxEdits)
+  const edit1ReqL1 = new NextRequest(`http://localhost:3000/api/public/forms/${formL1.publicId}/submissions/edit`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      editToken: initSubDataL1.editToken,
+      answers: [{ questionId: qL1[0].id, value: 'First edited text' }],
+    }),
+  });
+  const edit1ResL1 = await editHandlerPut(edit1ReqL1, { params: Promise.resolve({ publicId: formL1.publicId }) });
+  assert.strictEqual(edit1ResL1.status, 200, 'First edit should succeed');
+  const edit1DataL1 = await edit1ResL1.json();
+  assert.strictEqual(edit1DataL1.editCount, 1, 'editCount must be 1');
+  assert.strictEqual(edit1DataL1.canEdit, false, 'canEdit must be false when limit reached');
+  assert.strictEqual(edit1DataL1.editToken, undefined, 'editToken must NOT be returned when limit reached');
+  assert.strictEqual(computeShowEditControls(edit1DataL1, formL1.settings), false, 'Edit link MUST be HIDDEN after max edits reached');
+
+  // Re-attempt edit with original token via GET and PUT
+  const getAttemptL1 = new NextRequest(
+    `http://localhost:3000/api/public/forms/${formL1.publicId}/submissions/edit?editToken=${initSubDataL1.editToken}`
+  );
+  const getAttemptResL1 = await editHandlerGet(getAttemptL1, { params: Promise.resolve({ publicId: formL1.publicId }) });
+  assert.strictEqual(getAttemptResL1.status, 403, 'Loading exhausted edit link must return 403');
+
+  const putAttemptL1 = new NextRequest(`http://localhost:3000/api/public/forms/${formL1.publicId}/submissions/edit`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      editToken: initSubDataL1.editToken,
+      answers: [{ questionId: qL1[0].id, value: 'Illegal second edit' }],
+    }),
+  });
+  const putAttemptResL1 = await editHandlerPut(putAttemptL1, { params: Promise.resolve({ publicId: formL1.publicId }) });
+  assert.strictEqual(putAttemptResL1.status, 403, 'PUT to exhausted edit link must return 403');
+  console.log('  ✓ PASS: maxEditCount = 1: Edit link visible initially, hidden after 1 edit, further edits blocked (403).');
+
+  // 12.2: Case maxEditCount = 2
+  console.log('  -> Testing maxEditCount = 2 (2 edits allowed)...');
+  const { form: formL2, questions: qL2 } = await createTestForm({
+    title: 'Limit 2 Form',
+    ownerId: adminUser.id,
+    settings: {
+      allowResponseEditing: true,
+      editingAuthMethod: 'SECURE_EDIT_LINK',
+      editingWindowMode: 'WITHIN_WINDOW',
+      editingTimeDuration: 1,
+      editingTimeUnit: 'Hours',
+      editingWindowMinutes: 60,
+      maxEditCount: 2,
+    },
+  });
+
+  const initSubReqL2 = new NextRequest(`http://localhost:3000/api/public/forms/${formL2.publicId}/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answers: [{ questionId: qL2[0].id, value: 'Initial text' }] }),
+  });
+  const initSubResL2 = await publicSubmissionHandler(initSubReqL2, { params: Promise.resolve({ publicId: formL2.publicId }) });
+  const initSubDataL2 = await initSubResL2.json();
+  assert.strictEqual(computeShowEditControls(initSubDataL2, formL2.settings), true, 'Edit link visible initially (0 of 2)');
+
+  // Edit #1 (1 of 2 completed)
+  const edit1ReqL2 = new NextRequest(`http://localhost:3000/api/public/forms/${formL2.publicId}/submissions/edit`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      editToken: initSubDataL2.editToken,
+      answers: [{ questionId: qL2[0].id, value: 'Edit 1 of 2' }],
+    }),
+  });
+  const edit1ResL2 = await editHandlerPut(edit1ReqL2, { params: Promise.resolve({ publicId: formL2.publicId }) });
+  const edit1DataL2 = await edit1ResL2.json();
+  assert.strictEqual(edit1DataL2.editCount, 1);
+  assert.strictEqual(edit1DataL2.canEdit, true, 'canEdit must still be true after edit 1 of 2');
+  assert.ok(edit1DataL2.editToken, 'editToken must still be returned');
+  assert.strictEqual(computeShowEditControls(edit1DataL2, formL2.settings), true, 'Edit link MUST remain visible after edit 1 of 2');
+
+  // Edit #2 (2 of 2 completed)
+  const edit2ReqL2 = new NextRequest(`http://localhost:3000/api/public/forms/${formL2.publicId}/submissions/edit`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      editToken: edit1DataL2.editToken,
+      answers: [{ questionId: qL2[0].id, value: 'Edit 2 of 2' }],
+    }),
+  });
+  const edit2ResL2 = await editHandlerPut(edit2ReqL2, { params: Promise.resolve({ publicId: formL2.publicId }) });
+  const edit2DataL2 = await edit2ResL2.json();
+  assert.strictEqual(edit2DataL2.editCount, 2);
+  assert.strictEqual(edit2DataL2.canEdit, false, 'canEdit must be false after edit 2 of 2');
+  assert.strictEqual(edit2DataL2.editToken, undefined, 'editToken must be undefined after edit 2 of 2');
+  assert.strictEqual(computeShowEditControls(edit2DataL2, formL2.settings), false, 'Edit link MUST be hidden after edit 2 of 2');
+
+  // Edit #3 (rejected with 403)
+  const edit3ReqL2 = new NextRequest(`http://localhost:3000/api/public/forms/${formL2.publicId}/submissions/edit`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      editToken: initSubDataL2.editToken,
+      answers: [{ questionId: qL2[0].id, value: 'Edit 3 illegal' }],
+    }),
+  });
+  const edit3ResL2 = await editHandlerPut(edit3ReqL2, { params: Promise.resolve({ publicId: formL2.publicId }) });
+  assert.strictEqual(edit3ResL2.status, 403, '3rd edit must be rejected with 403');
+  console.log('  ✓ PASS: maxEditCount = 2: Visible on 0 and 1 completed edits, hidden on 2, rejected on 3.');
+
+  // ------------------------------------------------------------------------
+  // Requirement 13: Confirmation Screen layout cleanliness (Issue 2)
+  // ------------------------------------------------------------------------
+  console.log('\n[TEST 13] Absence of "Submit another response" and UI cleanliness');
+  const publicPagePath = path.join(__dirname, '../src/app/f/[publicId]/page.tsx');
+  const pageSrc = fs.readFileSync(publicPagePath, 'utf-8');
+
+  assert(!pageSrc.includes('Submit another response'), 'Submit another response button must NOT exist in page.tsx');
+  assert(!pageSrc.includes('isOneResponseRestricted'), 'isOneResponseRestricted must NOT exist in page.tsx');
+  assert(pageSrc.includes('showEditControls'), 'showEditControls must be used to cleanly guard edit controls');
+  console.log('  ✓ PASS: "Submit another response" button completely removed and confirmation screen cleanly formatted.');
+
   console.log('\n========================================================================');
-  console.log('  ALL 11 RESPONSE EDITING REGRESSION TESTS PASSED SUCCESSFULLY! (100%)   ');
+  console.log('  ALL 13 RESPONSE EDITING REGRESSION TESTS PASSED SUCCESSFULLY! (100%)   ');
   console.log('========================================================================\n');
 }
 

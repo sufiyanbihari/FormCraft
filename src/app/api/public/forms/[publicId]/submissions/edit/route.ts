@@ -114,12 +114,15 @@ export async function GET(
       formattedAnswers[ans.questionId] = ans.value;
     }
 
+    const maxEdits = Number(form.settings?.maxEditCount) || 1;
     return NextResponse.json({
       submission: {
         id: submission.id,
         editToken: submission.editToken,
         submittedAt: submission.submittedAt,
         editCount: submission.editCount,
+        maxEditCount: maxEdits,
+        canEdit: true,
         lastEditedAt: submission.lastEditedAt,
         respondentEmail: submission.respondentEmail,
         answers: formattedAnswers,
@@ -423,11 +426,28 @@ export async function PUT(
       },
     });
 
+    const allowEditing = Boolean(form.settings?.allowResponseEditing);
+    let windowMinutes = form.settings?.editingWindowMinutes;
+    if (!windowMinutes && form.settings?.editingTimeDuration) {
+      windowMinutes = calculateEditingWindowMinutes(form.settings.editingTimeDuration, form.settings.editingTimeUnit);
+    }
+    if (!windowMinutes || windowMinutes <= 0) {
+      windowMinutes = 1440;
+    }
+    const submissionTime = new Date(updatedSubmission.submittedAt).getTime();
+    const expiryTime = submissionTime + windowMinutes * 60 * 1000;
+    const isWithinWindow = Date.now() <= expiryTime;
+    const canEdit = allowEditing && isWithinWindow && updatedSubmission.editCount < maxEdits;
+
     return NextResponse.json({
       message: 'Your response has been successfully updated.',
       submissionId: updatedSubmission.id,
-      editToken: updatedSubmission.editToken,
+      submittedAt: updatedSubmission.submittedAt,
+      editToken: canEdit ? updatedSubmission.editToken : undefined,
       editCount: updatedSubmission.editCount,
+      maxEditCount: maxEdits,
+      canEdit,
+      allowResponseEditing: allowEditing,
       lastEditedAt: updatedSubmission.lastEditedAt,
       score: quizResult,
     });
