@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { getAuthUserFromRequest } from '@/lib/auth/session';
 import { getUserFormRole, canEditForm, canDeleteForm } from '@/lib/auth/rbac';
-import { updateFormSchema } from '@/lib/validation/formSchema';
+import { updateFormSchema, calculateEditingWindowMinutes } from '@/lib/validation/formSchema';
 import { logActivity } from '@/lib/audit/auditLogger';
 import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
 
@@ -88,8 +88,43 @@ export async function GET(
       return NextResponse.json({ error: 'Form not found' }, { status: 404 });
     }
 
-    if (form.settings && form.settings.duplicateIdentifierMethod !== 'IP_ADDRESS') {
-      form.settings.duplicateIdentifierMethod = 'IP_ADDRESS';
+    if (form.settings) {
+      if (form.settings.duplicateIdentifierMethod !== 'IP_ADDRESS') {
+        form.settings.duplicateIdentifierMethod = 'IP_ADDRESS';
+      }
+      if (form.settings.editingAuthMethod !== 'SECURE_EDIT_LINK') {
+        form.settings.editingAuthMethod = 'SECURE_EDIT_LINK';
+      }
+      if (form.settings.editingWindowMode !== 'WITHIN_WINDOW') {
+        form.settings.editingWindowMode = 'WITHIN_WINDOW';
+      }
+      const isDurationSynced =
+        Boolean(form.settings.editingTimeDuration) &&
+        Boolean(form.settings.editingWindowMinutes) &&
+        calculateEditingWindowMinutes(form.settings.editingTimeDuration, form.settings.editingTimeUnit) === form.settings.editingWindowMinutes;
+
+      if (!isDurationSynced) {
+        if (form.settings.editingWindowMinutes) {
+          const mins = form.settings.editingWindowMinutes;
+          if (mins % 1440 === 0) {
+            form.settings.editingTimeDuration = mins / 1440;
+            form.settings.editingTimeUnit = 'Days';
+          } else if (mins % 60 === 0) {
+            form.settings.editingTimeDuration = mins / 60;
+            form.settings.editingTimeUnit = 'Hours';
+          } else {
+            form.settings.editingTimeDuration = mins;
+            form.settings.editingTimeUnit = 'Minutes';
+          }
+        } else {
+          form.settings.editingTimeDuration = 24;
+          form.settings.editingTimeUnit = 'Hours';
+          form.settings.editingWindowMinutes = 1440;
+        }
+      }
+      if (!form.settings.maxEditCount || form.settings.maxEditCount < 1) {
+        form.settings.maxEditCount = 1;
+      }
     }
 
     return NextResponse.json({ form, userRole: role });
@@ -123,6 +158,26 @@ export async function PATCH(
     // Handle legacy QUESTION_FIELD duplicateIdentifierMethod from existing forms safely
     if (body?.settings?.duplicateIdentifierMethod === 'QUESTION_FIELD') {
       body.settings.duplicateIdentifierMethod = 'IP_ADDRESS';
+    }
+
+    // Support aliases and calculate editingWindowMinutes
+    if (body?.settings) {
+      if (body.settings.maxEdits !== undefined && body.settings.maxEditCount === undefined) {
+        body.settings.maxEditCount = body.settings.maxEdits;
+      }
+      if (body.settings.editingDuration !== undefined && body.settings.editingTimeDuration === undefined) {
+        body.settings.editingTimeDuration = body.settings.editingDuration;
+      }
+      if (body.settings.editingUnit !== undefined && body.settings.editingTimeUnit === undefined) {
+        body.settings.editingTimeUnit = body.settings.editingUnit;
+      }
+      if (body.settings.editingTimeDuration !== undefined || body.settings.editingTimeUnit !== undefined) {
+        const dur = body.settings.editingTimeDuration !== undefined ? body.settings.editingTimeDuration : 24;
+        const unit = body.settings.editingTimeUnit !== undefined ? body.settings.editingTimeUnit : 'Hours';
+        if (Number(dur) > 0) {
+          body.settings.editingWindowMinutes = calculateEditingWindowMinutes(dur, unit);
+        }
+      }
     }
 
     const result = updateFormSchema.safeParse(body);

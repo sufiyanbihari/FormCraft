@@ -161,7 +161,7 @@ export async function finalizeAttemptInTx(
   const gradeReleasedAt = isGradeReleased ? now : null;
 
   // Generate editToken & idempotency key for persistent submission
-  const editToken = `quiz-${attempt.id}-${crypto.randomBytes(8).toString('hex')}`;
+  const editToken = crypto.randomBytes(32).toString('hex');
   const idempotencyKey = `attempt-sub-${attempt.id}`;
 
   // 1. Create or update FormSubmission record

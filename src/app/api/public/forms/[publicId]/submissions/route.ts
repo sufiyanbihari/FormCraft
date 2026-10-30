@@ -402,12 +402,14 @@ export async function POST(
         }
       }
 
+      const editToken = crypto.randomBytes(32).toString('hex');
       const sub = await tx.formSubmission.create({
         data: {
           formId: form.id,
           formVersionId: form.publishedVersionId,
           respondentUserId: authenticatedUser?.id,
           respondentEmail: respondentEmail || authenticatedUser?.email,
+          editToken,
           ipHash,
           idempotencyKey,
           totalScore: form.isQuiz ? totalScore : null,

@@ -1,11 +1,32 @@
-import { prisma } from '@/lib/db/prisma';
+import { calculateEditingWindowMinutes } from '@/lib/validation/formSchema';
 
 export type EditingAuthMethod = 'SECURE_EDIT_LINK' | 'AUTH_USER' | 'ADMIN_ONLY' | 'BOTH_LINK_AND_AUTH';
-export type EditingWindowMode = 'ALWAYS' | 'WITHIN_WINDOW' | 'UNTIL_DEADLINE';
+export type EditingWindowMode = 'WITHIN_WINDOW' | 'ALWAYS' | 'UNTIL_DEADLINE';
 
 export interface VerifyEditEligibilityParams {
-  submission: any;
-  form: any;
+  submission: {
+    editToken?: string | null;
+    submittedAt: Date | string;
+    editCount?: number | null;
+    respondentUserId?: string | null;
+    [key: string]: unknown;
+  };
+  form: {
+    settings?: {
+      allowResponseEditing?: boolean | null;
+      isAcceptingResponses?: boolean | null;
+      closedMessage?: string | null;
+      endDate?: Date | string | null;
+      editingAuthMethod?: string | null;
+      editingWindowMode?: string | null;
+      editingWindowMinutes?: number | null;
+      editingTimeDuration?: number | null;
+      editingTimeUnit?: string | null;
+      maxEditCount?: number | null;
+      [key: string]: unknown;
+    } | null;
+    [key: string]: unknown;
+  };
   editToken?: string | null;
   authenticatedUser?: { id: string; email?: string; role?: string } | null;
   userRole?: string | null;
@@ -63,89 +84,44 @@ export function verifyEditEligibility({
     };
   }
 
-  // 4. Verify Authorization Method
-  const authMethod: EditingAuthMethod = settings.editingAuthMethod || 'SECURE_EDIT_LINK';
-
-  let isAuthorized = false;
-
-  if (authMethod === 'SECURE_EDIT_LINK') {
-    if (editToken && editToken === submission.editToken) {
-      isAuthorized = true;
-    } else {
-      return {
-        allowed: false,
-        reason: 'Invalid or missing edit link token. You do not have permission to edit this response.',
-        statusCode: 401,
-      };
-    }
-  } else if (authMethod === 'AUTH_USER') {
-    if (!authenticatedUser?.id) {
-      return {
-        allowed: false,
-        reason: 'You must be signed in to edit your response.',
-        statusCode: 401,
-      };
-    }
-    if (submission.respondentUserId === authenticatedUser.id) {
-      isAuthorized = true;
-    } else {
-      return {
-        allowed: false,
-        reason: 'This response belongs to a different account. You cannot edit it.',
-        statusCode: 403,
-      };
-    }
-  } else if (authMethod === 'ADMIN_ONLY') {
+  // 4. Verify Authorization Method: Only Secure Edit Link is supported for respondents
+  if (!editToken || editToken !== submission.editToken) {
     return {
       allowed: false,
-      reason: 'Response editing for this form can only be performed by form administrators.',
-      statusCode: 403,
+      reason: 'Invalid or missing edit link token. You do not have permission to edit this response.',
+      statusCode: 401,
     };
-  } else if (authMethod === 'BOTH_LINK_AND_AUTH') {
-    const tokenMatch = editToken && editToken === submission.editToken;
-    const userMatch = authenticatedUser?.id && submission.respondentUserId === authenticatedUser.id;
-    if (tokenMatch || userMatch) {
-      isAuthorized = true;
-    } else {
-      return {
-        allowed: false,
-        reason: 'You do not have authorization to edit this response.',
-        statusCode: 403,
-      };
-    }
   }
 
-  if (!isAuthorized) {
+  // 5. Verify Maximum Number of Edits
+  const maxEdits = Number(settings?.maxEditCount) || 1;
+  const currentEditCount = Number(submission?.editCount) || 0;
+  if (currentEditCount >= maxEdits) {
     return {
       allowed: false,
-      reason: 'Unauthorized edit request.',
+      reason: `This response has already reached the maximum allowed limit of ${maxEdits} edit${maxEdits === 1 ? '' : 's'}. Further edits are not permitted.`,
       statusCode: 403,
     };
   }
 
-  // 5. Verify Editing Window / Deadlines
-  const windowMode: EditingWindowMode = settings.editingWindowMode || 'ALWAYS';
+  // 6. Verify Editing Window (Within time limit after submission)
+  let windowMinutes = settings?.editingWindowMinutes;
+  if (!windowMinutes && settings?.editingTimeDuration) {
+    windowMinutes = calculateEditingWindowMinutes(settings.editingTimeDuration, settings.editingTimeUnit);
+  }
+  if (!windowMinutes || windowMinutes <= 0) {
+    windowMinutes = 1440; // Default 24 hours
+  }
 
-  if (windowMode === 'WITHIN_WINDOW') {
-    const windowMinutes = settings.editingWindowMinutes ?? 1440; // Default 24 hours
-    const submissionTime = new Date(submission.submittedAt).getTime();
-    const expiryTime = submissionTime + windowMinutes * 60 * 1000;
+  const submissionTime = new Date(submission.submittedAt).getTime();
+  const expiryTime = submissionTime + windowMinutes * 60 * 1000;
 
-    if (now.getTime() > expiryTime) {
-      return {
-        allowed: false,
-        reason: `The response editing window of ${Math.round(windowMinutes / 60)} hour(s) has expired.`,
-        statusCode: 403,
-      };
-    }
-  } else if (windowMode === 'UNTIL_DEADLINE') {
-    if (settings.editingDeadline && new Date(settings.editingDeadline) < now) {
-      return {
-        allowed: false,
-        reason: 'The configured response editing deadline has passed.',
-        statusCode: 403,
-      };
-    }
+  if (now.getTime() > expiryTime) {
+    return {
+      allowed: false,
+      reason: 'The editing window for this response has expired. Edits are no longer accepted.',
+      statusCode: 403,
+    };
   }
 
   return { allowed: true, actorType: 'RESPONDENT' };

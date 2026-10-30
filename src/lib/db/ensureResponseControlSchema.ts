@@ -14,8 +14,17 @@ const MIGRATION_STATEMENTS = [
 
   // FormSettings: Controlled Response Editing
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "editingAuthMethod" TEXT DEFAULT 'SECURE_EDIT_LINK'`,
-  `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "editingWindowMode" TEXT DEFAULT 'ALWAYS'`,
+  `UPDATE "form_settings" SET "editingAuthMethod" = 'SECURE_EDIT_LINK' WHERE "editingAuthMethod" IS NULL OR "editingAuthMethod" != 'SECURE_EDIT_LINK'`,
+  `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "editingWindowMode" TEXT DEFAULT 'WITHIN_WINDOW'`,
+  `UPDATE "form_settings" SET "editingWindowMode" = 'WITHIN_WINDOW' WHERE "editingWindowMode" IS NULL OR "editingWindowMode" != 'WITHIN_WINDOW'`,
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "editingWindowMinutes" INTEGER DEFAULT 1440`,
+  `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "editingTimeDuration" DOUBLE PRECISION DEFAULT 24`,
+  `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "editingTimeUnit" TEXT DEFAULT 'Hours'`,
+  `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "maxEditCount" INTEGER DEFAULT 1`,
+  `UPDATE "form_settings" SET "editingTimeDuration" = "editingWindowMinutes" / 60, "editingTimeUnit" = 'Hours' WHERE "editingTimeDuration" IS NULL AND "editingWindowMinutes" IS NOT NULL AND "editingWindowMinutes" % 60 = 0`,
+  `UPDATE "form_settings" SET "editingTimeDuration" = "editingWindowMinutes", "editingTimeUnit" = 'Minutes' WHERE "editingTimeDuration" IS NULL AND "editingWindowMinutes" IS NOT NULL`,
+  `UPDATE "form_settings" SET "editingTimeDuration" = 24, "editingTimeUnit" = 'Hours' WHERE "editingTimeDuration" IS NULL`,
+  `UPDATE "form_settings" SET "maxEditCount" = 1 WHERE "maxEditCount" IS NULL OR "maxEditCount" < 1`,
   `ALTER TABLE "form_settings" ADD COLUMN IF NOT EXISTS "editingDeadline" TIMESTAMP(3)`,
 
   // FormSubmission: Controlled Response Editing Metadata

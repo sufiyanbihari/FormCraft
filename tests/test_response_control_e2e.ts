@@ -198,7 +198,7 @@ async function runResponseControlE2ETests() {
   // Third submission by Respondent B (different user, must succeed)
   const authReq3 = new NextRequest(`http://localhost:3000/api/public/forms/${authDupForm.publicId}/submissions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: cookieB },
+    headers: { 'Content-Type': 'application/json', Cookie: cookieB, 'x-forwarded-for': '192.168.1.100' },
     body: JSON.stringify({
       answers: [{ questionId: authQId, value: 'Candidate 1' }],
     }),
@@ -270,7 +270,7 @@ async function runResponseControlE2ETests() {
   // Third submission with DIFFERENT Employee ID EMP-9002 -> Succeeds
   const qfReq3 = new NextRequest(`http://localhost:3000/api/public/forms/${qFieldForm.publicId}/submissions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '192.168.1.101' },
     body: JSON.stringify({
       answers: [
         { questionId: empIdQId, value: 'EMP-9002' },
@@ -386,7 +386,10 @@ async function runResponseControlE2ETests() {
       duplicateRestrictionScope: 'ONCE_PER_FORM',
       allowResponseEditing: true,
       editingAuthMethod: 'SECURE_EDIT_LINK',
-      editingWindowMode: 'ALWAYS',
+      editingWindowMode: 'WITHIN_WINDOW',
+      editingTimeDuration: 24,
+      editingTimeUnit: 'Hours',
+      maxEditCount: 3,
     },
     questions: [
       { title: 'Acres of Wheat', type: 'NUMBER' },

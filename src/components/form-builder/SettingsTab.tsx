@@ -520,7 +520,7 @@ export default function SettingsTab({
 
             {settings?.allowResponseEditing && (
               <div className="p-3.5 rounded-xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-200/70 dark:border-sky-800/60 space-y-3 text-xs animate-in fade-in">
-                {/* Editing Authorization Method */}
+                {/* 1. Editing Authorization Method */}
                 <div>
                   <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
                     Editing Authorization Method
@@ -538,176 +538,119 @@ export default function SettingsTab({
                       <SelectItem value="SECURE_EDIT_LINK">
                         Secure Edit Link (Unique token on confirmation screen)
                       </SelectItem>
-                      <SelectItem value="AUTH_USER">
-                        Signed-in Account Only (Must be logged in to original account)
-                      </SelectItem>
-                      <SelectItem value="BOTH_LINK_AND_AUTH">
-                        Both (Secure link or signed-in account)
-                      </SelectItem>
-                      <SelectItem value="ADMIN_ONLY">
-                        Administrator Only (Owner / editor reviews only)
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* 2. Editing Availability */}
+                <div>
+                  <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                    Editing Availability
+                  </label>
+                  <Select
+                    value={settings?.editingWindowMode || 'WITHIN_WINDOW'}
+                    onValueChange={(val) => onChangeSettings({ editingWindowMode: val })}
+                  >
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="Select editing availability" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="WITHIN_WINDOW">
+                        Within time limit after submission
                       </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                {/* Editing Window & Restriction Scope Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
-                      Editing Availability
-                    </label>
-                    <Select
-                      value={settings?.editingWindowMode || 'ALWAYS'}
-                      onValueChange={(val) => onChangeSettings({ editingWindowMode: val })}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue placeholder="Select editing window" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ALWAYS">
-                          Always allowed (Until form closes)
-                        </SelectItem>
-                        <SelectItem value="WITHIN_WINDOW">
-                          Within time limit after submission
-                        </SelectItem>
-                        <SelectItem value="UNTIL_DEADLINE">
-                          Until specific deadline cutoff
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    {settings?.editingWindowMode === 'WITHIN_WINDOW' && (
-                      <div className="mt-2">
-                        <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
-                          Time Allowed to Edit
-                        </label>
-                        <Select
-                          value={String(settings?.editingWindowMinutes ?? 1440)}
-                          onValueChange={(val) => onChangeSettings({ editingWindowMinutes: parseInt(val, 10) })}
-                        >
-                          <SelectTrigger className="h-9 text-xs">
-                            <SelectValue placeholder="Select duration" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="15">15 minutes</SelectItem>
-                            <SelectItem value="30">30 minutes</SelectItem>
-                            <SelectItem value="60">1 hour</SelectItem>
-                            <SelectItem value="120">2 hours</SelectItem>
-                            <SelectItem value="720">12 hours</SelectItem>
-                            <SelectItem value="1440">24 hours (1 day)</SelectItem>
-                            <SelectItem value="2880">48 hours (2 days)</SelectItem>
-                            <SelectItem value="10080">7 days (1 week)</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-
-                    {settings?.editingWindowMode === 'UNTIL_DEADLINE' && (
-                      <div className="mt-2">
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="font-semibold text-gray-800 dark:text-gray-200">
-                            Editing Cutoff Date & Time
-                          </label>
-                          {settings?.editingDeadline && (
-                            <button
-                              type="button"
-                              onClick={() => onChangeSettings({ editingDeadline: null })}
-                              className="text-[11px] text-red-500 hover:underline"
-                            >
-                              Clear
-                            </button>
-                          )}
-                        </div>
-                        <Input
-                          type="datetime-local"
-                          value={toLocalInputString(settings?.editingDeadline)}
-                          onChange={(e) =>
+                {/* 3. Time Allowed to Edit – Custom duration */}
+                <div>
+                  <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                    Time Allowed to Edit
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Input
+                        type="number"
+                        min="1"
+                        step="any"
+                        placeholder="Duration"
+                        value={settings?.editingTimeDuration !== undefined && settings?.editingTimeDuration !== null ? settings.editingTimeDuration : 24}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (raw === '') {
+                            onChangeSettings({ editingTimeDuration: '' });
+                          } else {
+                            const parsed = parseFloat(raw);
                             onChangeSettings({
-                              editingDeadline: e.target.value ? new Date(e.target.value).toISOString() : null,
-                            })
+                              editingTimeDuration: isNaN(parsed) || parsed <= 0 ? 1 : parsed,
+                            });
                           }
-                          className="h-9 text-xs"
-                        />
-                      </div>
-                    )}
+                        }}
+                        className="h-9 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <Select
+                        value={
+                          settings?.editingTimeUnit
+                            ? (settings.editingTimeUnit.charAt(0).toUpperCase() + settings.editingTimeUnit.slice(1).toLowerCase())
+                            : 'Hours'
+                        }
+                        onValueChange={(val) => onChangeSettings({ editingTimeUnit: val })}
+                      >
+                        <SelectTrigger className="h-9 text-xs">
+                          <SelectValue placeholder="Select unit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Minutes">Minutes</SelectItem>
+                          <SelectItem value="Hours">Hours</SelectItem>
+                          <SelectItem value="Days">Days</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
+                </div>
 
-                  <div>
-                    <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
-                      Restriction Scope
-                    </label>
-                    <Select
-                      value={settings?.duplicateRestrictionScope || 'ONCE_PER_FORM'}
-                      onValueChange={(val) => onChangeSettings({ duplicateRestrictionScope: val })}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue placeholder="Select restriction scope" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ONCE_PER_FORM">
-                          Once per form (Permanent)
-                        </SelectItem>
-                        <SelectItem value="PERIODIC">
-                          Time-based window (Periodic)
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    {settings?.duplicateRestrictionScope === 'PERIODIC' && (
-                      <div className="mt-2">
-                        <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
-                          Restriction Frequency
-                        </label>
-                        <Select
-                          value={settings?.duplicateRestrictionPeriod || 'DAILY'}
-                          onValueChange={(val) => onChangeSettings({ duplicateRestrictionPeriod: val })}
-                        >
-                          <SelectTrigger className="h-9 text-xs">
-                            <SelectValue placeholder="Select period" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="DAILY">Once per calendar day (UTC)</SelectItem>
-                            <SelectItem value="WEEKLY">Once per calendar week</SelectItem>
-                            <SelectItem value="MONTHLY">Once per calendar month</SelectItem>
-                            <SelectItem value="CUSTOM_HOURS">Custom rolling duration</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-
-                    {settings?.duplicateRestrictionScope === 'PERIODIC' && settings?.duplicateRestrictionPeriod === 'CUSTOM_HOURS' && (
-                      <div className="mt-2">
-                        <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
-                          Custom Duration (Hours)
-                        </label>
-                        <Input
-                          type="number"
-                          min="1"
-                          max="8760"
-                          value={settings?.duplicateCustomHours ?? 24}
-                          onChange={(e) => onChangeSettings({ duplicateCustomHours: parseInt(e.target.value, 10) || 24 })}
-                          className="h-9 text-xs"
-                        />
-                        <p className="text-[10px] text-gray-500 mt-1">
-                          Respondents can submit again only after this duration has elapsed since their last submission.
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                {/* 4. Maximum Number of Edits */}
+                <div>
+                  <label className="font-semibold text-gray-800 dark:text-gray-200 block mb-1">
+                    Maximum Number of Edits
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="e.g. 1, 3, 5"
+                    value={settings?.maxEditCount !== undefined && settings?.maxEditCount !== null ? settings.maxEditCount : 1}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === '') {
+                        onChangeSettings({ maxEditCount: '' });
+                      } else {
+                        const parsed = parseInt(raw, 10);
+                        onChangeSettings({
+                          maxEditCount: isNaN(parsed) || parsed < 1 ? 1 : parsed,
+                        });
+                      }
+                    }}
+                    className="h-9 text-xs"
+                  />
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Configure how many times a respondent can edit their original submission.
+                  </p>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-white/70 dark:bg-gray-900/60 border border-sky-200/60 dark:border-sky-900/40 text-[11px] text-sky-900 dark:text-sky-300 flex items-start gap-2">
                   <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-sky-600 mt-0.5" />
                   <span>
-                    Concurrent submissions are serialized and verified atomically on the server. If response editing is enabled, blocked participants will be offered an option to edit their previous response.
+                    Respondents must use a secure, unique edit link to access their previously submitted response.
                   </span>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-white/70 dark:bg-gray-900/60 border border-sky-200/60 dark:border-sky-900/40 text-[11px] text-sky-900 dark:text-sky-300 flex items-start gap-2">
                   <Edit3 className="h-3.5 w-3.5 shrink-0 text-sky-600 mt-0.5" />
                   <span>
-                    Edits update the original response in-place, preserving the response record and updating responses analytics and exports without creating duplicate entries.
+                    Edits update the original response in-place, preserving the original submission timestamp without creating duplicate entries.
                   </span>
                 </div>
               </div>

@@ -71,8 +71,25 @@ export const rawFormSettingsShape = {
     .optional()
     .transform((v) => (v === undefined ? undefined : v === '' || v === null ? null : Number(v))),
   // Controlled Response Editing
-  editingAuthMethod: z.enum(['SECURE_EDIT_LINK', 'AUTH_USER', 'ADMIN_ONLY', 'BOTH_LINK_AND_AUTH']).optional(),
-  editingWindowMode: z.enum(['ALWAYS', 'WITHIN_WINDOW', 'UNTIL_DEADLINE']).optional(),
+  editingAuthMethod: z.enum(['SECURE_EDIT_LINK']).optional(),
+  editingWindowMode: z.enum(['WITHIN_WINDOW']).optional(),
+  editingTimeDuration: z
+    .union([z.number(), z.string(), z.null(), z.literal('')])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === '' || v === null ? null : Number(v)))
+    .refine((v) => v === undefined || v === null || (!isNaN(v) && v > 0), {
+      message: 'Duration must be a positive number',
+    }),
+  editingTimeUnit: z
+    .enum(['Minutes', 'Hours', 'Days', 'MINUTES', 'HOURS', 'DAYS', 'minutes', 'hours', 'days'])
+    .optional(),
+  maxEditCount: z
+    .union([z.number().int(), z.string(), z.null(), z.literal('')])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === '' || v === null ? null : Math.floor(Number(v))))
+    .refine((v) => v === undefined || v === null || (!isNaN(v) && v >= 1), {
+      message: 'Maximum number of edits must be at least 1',
+    }),
   editingWindowMinutes: z
     .union([z.number().int().min(1).max(525600), z.null(), z.literal('')])
     .optional()
@@ -82,6 +99,22 @@ export const rawFormSettingsShape = {
     .optional()
     .transform((v) => (v === undefined ? undefined : !v ? null : new Date(v).toISOString())),
 };
+
+export function calculateEditingWindowMinutes(
+  duration?: number | null,
+  unit?: string | null
+): number {
+  const d = Number(duration) || 24;
+  const u = String(unit || 'Hours').trim().toLowerCase();
+  if (u.startsWith('minute')) {
+    return Math.max(1, Math.round(d));
+  }
+  if (u.startsWith('day')) {
+    return Math.max(1, Math.round(d * 1440));
+  }
+  // default hours
+  return Math.max(1, Math.round(d * 60));
+}
 
 export const baseFormSettingsSchema = z.object({
   ...rawFormSettingsShape,
@@ -110,8 +143,12 @@ export const baseFormSettingsSchema = z.object({
   duplicateIdentifierMethod: z.enum(['IP_ADDRESS']).optional().default('IP_ADDRESS'),
   duplicateRestrictionScope: z.enum(['ONCE_PER_FORM', 'PERIODIC']).optional().default('ONCE_PER_FORM'),
   duplicateRestrictionPeriod: z.enum(['DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM_HOURS']).optional().default('DAILY'),
-  editingAuthMethod: z.enum(['SECURE_EDIT_LINK', 'AUTH_USER', 'ADMIN_ONLY', 'BOTH_LINK_AND_AUTH']).optional().default('SECURE_EDIT_LINK'),
-  editingWindowMode: z.enum(['ALWAYS', 'WITHIN_WINDOW', 'UNTIL_DEADLINE']).optional().default('ALWAYS'),
+  editingAuthMethod: z.enum(['SECURE_EDIT_LINK']).optional().default('SECURE_EDIT_LINK'),
+  editingWindowMode: z.enum(['WITHIN_WINDOW']).optional().default('WITHIN_WINDOW'),
+  editingTimeDuration: z.number().positive().optional().default(24),
+  editingTimeUnit: z.enum(['Minutes', 'Hours', 'Days', 'MINUTES', 'HOURS', 'DAYS', 'minutes', 'hours', 'days']).optional().default('Hours'),
+  maxEditCount: z.number().int().min(1).optional().default(1),
+  editingWindowMinutes: z.number().int().min(1).optional().default(1440),
 });
 
 export function validateBothTimersConstraint(

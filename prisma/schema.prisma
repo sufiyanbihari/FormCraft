@@ -161,9 +161,12 @@ model FormSettings {
   duplicateRestrictionPeriod    String?    @default("DAILY") // "DAILY" | "WEEKLY" | "MONTHLY" | "CUSTOM_HOURS"
   duplicateCustomHours          Int?       @default(24)
   // Controlled Response Editing
-  editingAuthMethod            String?    @default("SECURE_EDIT_LINK") // "SECURE_EDIT_LINK" | "AUTH_USER" | "ADMIN_ONLY" | "BOTH_LINK_AND_AUTH"
-  editingWindowMode            String?    @default("ALWAYS") // "ALWAYS" | "WITHIN_WINDOW" | "UNTIL_DEADLINE"
+  editingAuthMethod            String?    @default("SECURE_EDIT_LINK")
+  editingWindowMode            String?    @default("WITHIN_WINDOW")
   editingWindowMinutes         Int?       @default(1440)
+  editingTimeDuration          Float?
+  editingTimeUnit              String?
+  maxEditCount                 Int?       @default(1)
   editingDeadline              DateTime?
   createdAt                DateTime   @default(now())
   updatedAt                DateTime   @updatedAt

@@ -93,6 +93,12 @@ export async function POST(
                   quizPassMessage: original.settings.quizPassMessage,
                   quizFailMessage: original.settings.quizFailMessage,
                   quizDefaultPoints: original.settings.quizDefaultPoints,
+                  editingAuthMethod: original.settings.editingAuthMethod,
+                  editingWindowMode: original.settings.editingWindowMode,
+                  editingWindowMinutes: original.settings.editingWindowMinutes,
+                  editingTimeDuration: original.settings.editingTimeDuration,
+                  editingTimeUnit: original.settings.editingTimeUnit,
+                  maxEditCount: original.settings.maxEditCount,
                 },
               }
             : undefined,
