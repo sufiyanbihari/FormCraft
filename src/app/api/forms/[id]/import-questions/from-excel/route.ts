@@ -155,6 +155,7 @@ export async function POST(
                 correctValue,
               },
               quizExplanation: '',
+              timeLimitSeconds: (q as any).timeLimitSeconds ?? 0,
             },
           });
 
@@ -233,6 +234,7 @@ export async function POST(
                 correctValue,
               },
               quizExplanation: '',
+              timeLimitSeconds: (q as any).timeLimitSeconds ?? 0,
             },
           });
 

@@ -58,6 +58,7 @@ import {
 } from 'lucide-react';
 import { getVideoEmbedUrl, formatBytes, formatSizeMb, isLikelyImageSource, isLikelyVideoSource } from '@/lib/utils';
 import { uploadFile } from '@/lib/storage/clientUpload';
+import { getEffectiveQuestionTimer } from '@/lib/quiz/quizTimer';
 
 export const QUESTION_TYPE_LABELS: Record<string, { label: string; icon: any }> = {
   SHORT_ANSWER: { label: 'Short answer', icon: AlignLeft },
@@ -121,6 +122,8 @@ interface QuestionCardProps {
   lookupMappings?: any[];
   onOpenLookup?: () => void;
   quizDefaultPoints?: number;
+  quizTimerMode?: string;
+  quizQuestionTimeLimitSeconds?: number | null;
 }
 
 interface SizeLimitControlProps {
@@ -256,7 +259,18 @@ export default function QuestionCard({
   lookupMappings,
   onOpenLookup,
   quizDefaultPoints = 1,
+  quizTimerMode = 'NONE',
+  quizQuestionTimeLimitSeconds = null,
 }: QuestionCardProps) {
+  const timerResult = getEffectiveQuestionTimer(
+    question,
+    { quizTimerMode, quizQuestionTimeLimitSeconds },
+    isQuiz
+  );
+  const { effectiveSeconds, isInherited, hasOverride } = timerResult;
+
+  const [timerInputFocused, setTimerInputFocused] = useState(false);
+  const [timerInputText, setTimerInputText] = useState<string>('');
   const [showAnswerKey, setShowAnswerKey] = useState(false);
   const [showDescription, setShowDescription] = useState(Boolean(question.description));
   const [showBranching, setShowBranching] = useState(
@@ -2167,15 +2181,76 @@ export default function QuestionCard({
                 <div className="flex items-center gap-1.5 pl-3 border-l border-purple-200 dark:border-purple-800">
                   <Clock className="h-3.5 w-3.5 text-purple-600" />
                   <span className="text-xs text-gray-500 font-medium">Timer:</span>
-                  <Input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={question.timeLimitSeconds || ''}
-                    onChange={(e) => onChange({ timeLimitSeconds: parseInt(e.target.value, 10) || 0 })}
-                    className="w-16 h-7 text-xs font-bold text-center"
-                  />
-                  <span className="text-[11px] text-gray-400">sec</span>
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder={isInherited ? String(effectiveSeconds) : '0'}
+                      value={timerInputFocused ? timerInputText : (effectiveSeconds > 0 ? effectiveSeconds : '')}
+                      onFocus={(e) => {
+                        setTimerInputFocused(true);
+                        setTimerInputText(hasOverride ? String(question.timeLimitSeconds) : String(effectiveSeconds > 0 ? effectiveSeconds : ''));
+                        e.target.select();
+                      }}
+                      onBlur={() => {
+                        setTimerInputFocused(false);
+                        const trimmed = timerInputText.trim();
+                        if (trimmed === '' || trimmed === '0') {
+                          onChange({ timeLimitSeconds: 0 });
+                        } else {
+                          const parsed = parseInt(trimmed, 10);
+                          onChange({ timeLimitSeconds: isNaN(parsed) ? 0 : Math.max(0, parsed) });
+                        }
+                      }}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTimerInputText(val);
+                        const trimmed = val.trim();
+                        if (trimmed === '' || trimmed === '0') {
+                          onChange({ timeLimitSeconds: 0 });
+                        } else {
+                          const parsed = parseInt(trimmed, 10);
+                          if (!isNaN(parsed)) {
+                            onChange({ timeLimitSeconds: Math.max(0, parsed) });
+                          }
+                        }
+                      }}
+                      className={`w-16 h-7 text-xs font-bold text-center ${
+                        hasOverride
+                          ? 'border-amber-400 dark:border-amber-600 bg-amber-50/50 dark:bg-amber-950/30'
+                          : ''
+                      }`}
+                      title={
+                        hasOverride
+                          ? `Custom override (${question.timeLimitSeconds}s). Enter 0 or click to reset to quiz default.`
+                          : isInherited
+                            ? `Inherited from Quiz Settings (${effectiveSeconds}s). Enter a positive number to set a custom override.`
+                            : 'No timer configured for this question.'
+                      }
+                    />
+                    <span className="text-[11px] text-gray-400">sec</span>
+                    {hasOverride ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onChange({ timeLimitSeconds: 0 });
+                          setTimerInputText('');
+                        }}
+                        className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-950/60 hover:bg-amber-200/80 dark:hover:bg-amber-900/60 px-1.5 py-0.5 rounded border border-amber-300/80 dark:border-amber-700/80 transition-colors flex items-center gap-0.5"
+                        title="Click to reset to quiz default timer"
+                      >
+                        <span>custom</span>
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    ) : isInherited ? (
+                      <span
+                        className="text-[10px] font-medium text-purple-700/80 dark:text-purple-300/80 bg-purple-100/50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200/60 dark:border-purple-800/60"
+                        title="Inherited from Quiz Settings"
+                      >
+                        inherited
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2460,9 +2535,12 @@ export default function QuestionCard({
                 <Award className="h-3.5 w-3.5 mr-1.5" />
                 Answer key ({question.quizPoints !== undefined ? question.quizPoints : (isQuiz ? (quizDefaultPoints ?? 1) : 0)} pts)
               </Button>
-              {question.timeLimitSeconds && question.timeLimitSeconds > 0 ? (
+              {effectiveSeconds > 0 ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-md">
-                  <Clock className="h-3 w-3" /> {question.timeLimitSeconds}s
+                  <Clock className="h-3 w-3" /> {effectiveSeconds}s
+                  {hasOverride && (
+                    <span className="text-[9px] font-normal opacity-80">(custom)</span>
+                  )}
                 </span>
               ) : null}
             </div>

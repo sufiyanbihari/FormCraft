@@ -4,6 +4,7 @@ import { startQuizAttemptSchema } from '@/lib/validation/quizAttemptSchema';
 import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
 import { reconcileAttemptTimeout } from '@/lib/quiz/quizAttemptService';
 import { generateQuizQuestionOrder } from '@/lib/quiz/quizShuffle';
+import { getEffectiveQuestionTimer } from '@/lib/quiz/quizTimer';
 import { getAuthUserFromRequest } from '@/lib/auth/session';
 
 export async function POST(
@@ -151,8 +152,7 @@ export async function POST(
       }
 
       let currentQuestionDeadline: Date | null = null;
-      const defaultQTimer = (settings?.quizTimerMode === 'QUESTION' || settings?.quizTimerMode === 'BOTH') && settings?.quizQuestionTimeLimitSeconds ? settings.quizQuestionTimeLimitSeconds : 0;
-      const effectiveFirstQTimer = (firstQuestion?.timeLimitSeconds && firstQuestion.timeLimitSeconds > 0) ? firstQuestion.timeLimitSeconds : defaultQTimer;
+      const effectiveFirstQTimer = getEffectiveQuestionTimer(firstQuestion, settings, form.isQuiz).effectiveSeconds;
 
       if (firstQuestion && effectiveFirstQTimer > 0) {
         currentQuestionDeadline = new Date(startedAt.getTime() + effectiveFirstQTimer * 1000);
@@ -268,13 +268,13 @@ export async function GET(
     const attempt = attemptId
       ? await prisma.quizAttempt.findUnique({ where: { id: attemptId } })
       : await prisma.quizAttempt.findUnique({
-          where: {
-            formId_participantIdentity: {
-              formId: form.id,
-              participantIdentity: participantIdentity!.trim(),
-            },
+        where: {
+          formId_participantIdentity: {
+            formId: form.id,
+            participantIdentity: participantIdentity!.trim(),
           },
-        });
+        },
+      });
 
     if (!attempt) {
       return NextResponse.json({ error: 'Attempt not found' }, { status: 404 });
@@ -294,7 +294,7 @@ export async function GET(
       await prisma.quizAttempt.update({
         where: { id: reconciled.id },
         data: { questionOrder: safeQuestionOrder },
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     return NextResponse.json({

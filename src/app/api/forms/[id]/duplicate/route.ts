@@ -93,6 +93,11 @@ export async function POST(
                   quizPassMessage: original.settings.quizPassMessage,
                   quizFailMessage: original.settings.quizFailMessage,
                   quizDefaultPoints: original.settings.quizDefaultPoints,
+                  quizTimerMode: original.settings.quizTimerMode,
+                  quizDurationMinutes: original.settings.quizDurationMinutes,
+                  quizQuestionTimeLimitSeconds: original.settings.quizQuestionTimeLimitSeconds,
+                  quizNavigationPolicy: original.settings.quizNavigationPolicy,
+                  quizTimeoutBehavior: original.settings.quizTimeoutBehavior,
                   editingAuthMethod: original.settings.editingAuthMethod,
                   editingWindowMode: original.settings.editingWindowMode,
                   editingWindowMinutes: original.settings.editingWindowMinutes,
@@ -131,6 +136,7 @@ export async function POST(
               quizPoints: q.quizPoints,
               quizAnswer: q.quizAnswer || {},
               quizExplanation: q.quizExplanation,
+              timeLimitSeconds: q.timeLimitSeconds ?? 0,
             },
           });
 

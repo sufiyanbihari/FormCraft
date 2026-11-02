@@ -615,6 +615,7 @@ function FormBuilderContent() {
           quizPoints: duplicatedPoints,
           quizAnswer: orig.quizAnswer,
           quizExplanation: orig.quizExplanation,
+          timeLimitSeconds: orig.timeLimitSeconds ?? 0,
           options: orig.options.map((o) => ({
             label: o.label,
             value: o.value,
@@ -1275,6 +1276,8 @@ function FormBuilderContent() {
                             lookupMappings={lookupMappings}
                             onOpenLookup={() => setIsLookupOpen(true)}
                             quizDefaultPoints={settings?.quizDefaultPoints ?? 1}
+                            quizTimerMode={settings?.quizTimerMode || 'NONE'}
+                            quizQuestionTimeLimitSeconds={settings?.quizQuestionTimeLimitSeconds ?? null}
                           />
                         ))}
                       </SortableContext>

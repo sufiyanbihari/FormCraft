@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { getAuthUserFromRequest } from '@/lib/auth/session';
 import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
 import { ensureResponseControlSchema } from '@/lib/db/ensureResponseControlSchema';
+import { getEffectiveQuestionTimer } from '@/lib/quiz/quizTimer';
 
 export async function GET(
   request: NextRequest,
@@ -91,13 +92,7 @@ export async function GET(
         validation: q.validation,
         config: q.config,
         quizPoints: form.isQuiz ? q.quizPoints : 0,
-        timeLimitSeconds: form.isQuiz
-          ? (q.timeLimitSeconds && q.timeLimitSeconds > 0
-              ? q.timeLimitSeconds
-              : ((form.settings?.quizTimerMode === 'QUESTION' || form.settings?.quizTimerMode === 'BOTH') && form.settings?.quizQuestionTimeLimitSeconds
-                  ? form.settings.quizQuestionTimeLimitSeconds
-                  : 0))
-          : 0,
+        timeLimitSeconds: getEffectiveQuestionTimer(q, form.settings, form.isQuiz).effectiveSeconds,
         options: q.options.map((opt) => ({
           id: opt.id,
           label: opt.label,

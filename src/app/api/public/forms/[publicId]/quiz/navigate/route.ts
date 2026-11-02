@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { quizNavigateSchema } from '@/lib/validation/quizAttemptSchema';
 import { ensureQuizSchema } from '@/lib/db/ensureQuizSchema';
 import { finalizeAttemptInTx } from '@/lib/quiz/quizAttemptService';
+import { getEffectiveQuestionTimer } from '@/lib/quiz/quizTimer';
 import { getAuthUserFromRequest } from '@/lib/auth/session';
 
 export async function POST(
@@ -154,15 +155,7 @@ export async function POST(
       targetQuestionDeadline = existingTiming.deadline ? new Date(existingTiming.deadline) : null;
     } else {
       // First visit to target question
-      const defaultQTimer =
-        (form.settings?.quizTimerMode === 'QUESTION' || form.settings?.quizTimerMode === 'BOTH') &&
-        form.settings?.quizQuestionTimeLimitSeconds
-          ? form.settings.quizQuestionTimeLimitSeconds
-          : 0;
-      const effectiveTargetQTimer =
-        targetQ.timeLimitSeconds && targetQ.timeLimitSeconds > 0
-          ? targetQ.timeLimitSeconds
-          : defaultQTimer;
+      const effectiveTargetQTimer = getEffectiveQuestionTimer(targetQ, form.settings, form.isQuiz).effectiveSeconds;
 
       if (effectiveTargetQTimer > 0) {
         targetQuestionDeadline = new Date(now.getTime() + effectiveTargetQTimer * 1000);

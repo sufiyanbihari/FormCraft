@@ -181,6 +181,7 @@ export async function POST(
               quizPoints: assignedQuizPoints,
               quizAnswer: srcQ.quizAnswer ? JSON.parse(JSON.stringify(srcQ.quizAnswer)) : {},
               quizExplanation: srcQ.quizExplanation || '',
+              timeLimitSeconds: srcQ.timeLimitSeconds ?? 0,
             },
           });
 
@@ -288,6 +289,7 @@ export async function POST(
               quizPoints: assignedQuizPoints,
               quizAnswer: srcQ.quizAnswer ? JSON.parse(JSON.stringify(srcQ.quizAnswer)) : {},
               quizExplanation: srcQ.quizExplanation || '',
+              timeLimitSeconds: srcQ.timeLimitSeconds ?? 0,
             },
           });
 
