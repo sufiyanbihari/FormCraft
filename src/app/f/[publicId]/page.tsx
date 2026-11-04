@@ -50,6 +50,7 @@ import { uploadFile } from '@/lib/storage/clientUpload';
 import QuizTimerBar from '@/components/quiz/QuizTimerBar';
 import QuizStartCard from '@/components/quiz/QuizStartCard';
 import { reorderSectionsByQuestionOrder } from '@/lib/quiz/quizShuffle';
+import { notifyFormSubmitted } from '@/lib/submission/submissionEvents';
 
 function isDarkColor(hexColor?: string): boolean {
   if (!hexColor || !hexColor.startsWith('#')) return true;
@@ -559,6 +560,7 @@ function PublicFormContent() {
       const data = await res.json();
       setIsSubmitted(true);
       setSubmissionResult(data);
+      notifyFormSubmitted(publicId, formData?.id, data?.submissionId);
     } catch (e) {
       console.error('Overall timeout finalization failed:', e);
     } finally {
@@ -1408,6 +1410,7 @@ function PublicFormContent() {
         } else {
           setIsSubmitted(true);
           setSubmissionResult(data);
+          notifyFormSubmitted(publicId, formData?.id, data?.submissionId);
           confetti({
             particleCount: 80,
             spread: 70,
@@ -1559,6 +1562,7 @@ function PublicFormContent() {
       } else {
         setIsSubmitted(true);
         setSubmissionResult(data);
+        notifyFormSubmitted(publicId, formData?.id, data?.submissionId);
         // Trigger celebratory confetti!
         confetti({
           particleCount: 80,

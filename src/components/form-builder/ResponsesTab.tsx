@@ -162,6 +162,7 @@ interface ResponsesTabProps {
   onToggleAccepting: (accepting: boolean) => void;
   primaryColor?: string;
   initialSubView?: 'summary' | 'question' | 'individual' | 'liveDashboard';
+  onResponseCountChange?: (count: number) => void;
 }
 
 const CHART_COLORS = [
@@ -182,6 +183,7 @@ export default function ResponsesTab({
   onToggleAccepting,
   primaryColor = '#673ab7',
   initialSubView,
+  onResponseCountChange,
 }: ResponsesTabProps) {
   const [subView, setSubView] = useState<'summary' | 'question' | 'individual' | 'liveDashboard'>(
     initialSubView || (isQuiz ? 'liveDashboard' : 'summary')
@@ -288,17 +290,30 @@ export default function ResponsesTab({
         fetch(`/api/forms/${formId}/responses?limit=100`),
       ]);
 
+      let freshCount: number | null = null;
       if (analyticsRes.ok) {
         const aData = await analyticsRes.json();
         setAnalytics(aData);
         if (aData.questionAnalytics?.length > 0) {
           setSelectedQuestionId(aData.questionAnalytics[0].questionId);
         }
+        if (typeof aData?.summary?.totalSubmissions === 'number') {
+          freshCount = aData.summary.totalSubmissions;
+        }
       }
 
       if (submissionsRes.ok) {
         const sData = await submissionsRes.json();
         setSubmissions(sData.submissions || []);
+        if (freshCount === null && typeof sData?.pagination?.total === 'number') {
+          freshCount = sData.pagination.total;
+        } else if (freshCount === null) {
+          freshCount = (sData.submissions || []).length;
+        }
+      }
+
+      if (freshCount !== null) {
+        onResponseCountChange?.(freshCount);
       }
     } catch (err) {
       console.error('Failed to load response data:', err);

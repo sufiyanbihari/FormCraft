@@ -32,6 +32,7 @@ import {
 } from '@dnd-kit/sortable';
 import { Loader2, Sparkles, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { isLikelyImageSource, getUnwantedDefaultSection } from '@/lib/utils';
+import { SUBMISSION_BROADCAST_CHANNEL, SUBMISSION_STORAGE_KEY } from '@/lib/submission/submissionEvents';
 
 function FormBuilderContent() {
   const params = useParams();
@@ -64,6 +65,7 @@ function FormBuilderContent() {
   const [isLookupOpen, setIsLookupOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [lookupMappings, setLookupMappings] = useState<any[]>([]);
+  const [responseCount, setResponseCount] = useState<number>(0);
 
   // Toast Notification State & Timeout Ref
   interface ToastNotification {
@@ -198,6 +200,7 @@ function FormBuilderContent() {
       const data = await res.json();
       const f = data.form;
       setForm(f);
+      setResponseCount(f._count?.submissions ?? 0);
       setTitle(f.title);
       setDescription(f.description || '');
       setIsQuiz(f.isQuiz);
@@ -311,6 +314,83 @@ function FormBuilderContent() {
     },
     [formId]
   );
+
+  const refreshResponseCount = useCallback(async () => {
+    if (!formId) return;
+    try {
+      const res = await fetch(`/api/forms/${formId}/responses/count`);
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.count === 'number') {
+          setResponseCount(data.count);
+          setForm((prev: any) =>
+            prev ? { ...prev, _count: { ...(prev._count || {}), submissions: data.count } } : prev
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Failed to refresh response count:', err);
+    }
+  }, [formId]);
+
+  useEffect(() => {
+    if (!formId) return;
+
+    let channel: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        channel = new BroadcastChannel(SUBMISSION_BROADCAST_CHANNEL);
+        channel.onmessage = (event) => {
+          const payload = event?.data;
+          if (
+            payload &&
+            (payload.formId === formId || (form?.publicId && payload.publicId === form.publicId))
+          ) {
+            refreshResponseCount();
+          }
+        };
+      } catch (e) {
+        // BroadcastChannel unsupported or restricted in environment
+      }
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SUBMISSION_STORAGE_KEY && event.newValue) {
+        try {
+          const payload = JSON.parse(event.newValue);
+          if (
+            payload &&
+            (payload.formId === formId || (form?.publicId && payload.publicId === form.publicId))
+          ) {
+            refreshResponseCount();
+          }
+        } catch {
+          // ignore parsing error
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshResponseCount();
+      }
+    };
+    const handleFocus = () => {
+      refreshResponseCount();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      if (channel) {
+        channel.close();
+      }
+      window.removeEventListener('storage', handleStorage);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [formId, form?.publicId, refreshResponseCount]);
 
   const flushAllPendingQuestionSaves = useCallback(async () => {
     const promises: Promise<void>[] = [];
@@ -1159,6 +1239,9 @@ function FormBuilderContent() {
           if (activeTab === 'questions' && tab !== 'questions') {
             flushAllPendingQuestionSaves();
           }
+          if (tab === 'responses') {
+            refreshResponseCount();
+          }
           setActiveTab(tab);
         }}
         saveStatus={saveStatus}
@@ -1174,7 +1257,7 @@ function FormBuilderContent() {
         isPublishing={isPublishing}
         isPublished={form.status === 'PUBLISHED'}
         publicId={form.publicId}
-        responseCount={form._count?.submissions || 0}
+        responseCount={responseCount}
         primaryColor={theme.primaryColor}
       />
 
@@ -1306,6 +1389,12 @@ function FormBuilderContent() {
               setSettings((prev: any) => ({ ...prev, isAcceptingResponses: accepting }));
             }}
             primaryColor={theme.primaryColor}
+            onResponseCountChange={(cnt) => {
+              setResponseCount(cnt);
+              setForm((prev: any) =>
+                prev ? { ...prev, _count: { ...(prev._count || {}), submissions: cnt } } : prev
+              );
+            }}
           />
         )}
 
