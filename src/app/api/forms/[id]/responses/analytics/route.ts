@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { getAuthUserFromRequest } from '@/lib/auth/session';
 import { getUserFormRole, canViewResponses } from '@/lib/auth/rbac';
+import { getCattleOwnerFieldForQuestion } from '@/lib/submission/cattleOwnerHelpers';
 
 export async function GET(
   request: NextRequest,
@@ -39,6 +40,9 @@ export async function GET(
         where: { formId: id },
         include: {
           answers: true,
+          cattleOwners: {
+            orderBy: { orderIndex: 'asc' },
+          },
         },
         orderBy: { submittedAt: 'asc' },
       }),
@@ -77,9 +81,34 @@ export async function GET(
     // Question-level metrics
     const allQuestions = form.sections.flatMap((s) => s.questions);
     const questionAnalytics = allQuestions.map((q) => {
-      const answersForQuestion = submissions.flatMap((s) =>
-        s.answers.filter((a) => a.questionId === q.id)
-      );
+      const ownerField = getCattleOwnerFieldForQuestion(q);
+
+      // Determine answers for question:
+      // If q is an owner-specific question and submissions have cattleOwners,
+      // aggregate values across all owners belonging to every submission.
+      let answersForQuestion: Array<{ value: any }>;
+
+      if (ownerField) {
+        answersForQuestion = submissions.flatMap((s) => {
+          if (s.cattleOwners && s.cattleOwners.length > 0) {
+            return s.cattleOwners
+              .map((owner) => {
+                const val = (owner as any)[ownerField];
+                return { value: val };
+              })
+              .filter((a) => a.value !== undefined && a.value !== null && String(a.value).trim() !== '');
+          }
+          // Legacy or fallback: use submission answer if available
+          return s.answers
+            .filter((a) => a.questionId === q.id)
+            .map((a) => ({ value: a.value }))
+            .filter((a) => a.value !== undefined && a.value !== null && String(a.value).trim() !== '');
+        });
+      } else {
+        answersForQuestion = submissions.flatMap((s) =>
+          s.answers.filter((a) => a.questionId === q.id).map((a) => ({ value: a.value }))
+        );
+      }
 
       const answeredCount = answersForQuestion.length;
 
@@ -91,9 +120,24 @@ export async function GET(
         });
 
         answersForQuestion.forEach((ans) => {
-          const val = typeof ans.value === 'string' ? ans.value : String(ans.value || '');
-          if (val) {
-            counts[val] = (counts[val] || 0) + 1;
+          const raw = typeof ans.value === 'string' ? ans.value.trim() : String(ans.value || '').trim();
+          if (raw) {
+            if (counts[raw] !== undefined) {
+              counts[raw] = (counts[raw] || 0) + 1;
+            } else {
+              // Match by case-insensitive or prefix if option text contains bilingual translation
+              const matchedKey = Object.keys(counts).find(
+                (k) =>
+                  k.toLowerCase() === raw.toLowerCase() ||
+                  k.toLowerCase().startsWith(raw.toLowerCase()) ||
+                  raw.toLowerCase().startsWith(k.toLowerCase())
+              );
+              if (matchedKey) {
+                counts[matchedKey] = (counts[matchedKey] || 0) + 1;
+              } else {
+                counts[raw] = (counts[raw] || 0) + 1;
+              }
+            }
           }
         });
 

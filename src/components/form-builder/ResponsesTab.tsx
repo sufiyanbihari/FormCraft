@@ -31,6 +31,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import LiveQuizDashboard from '@/components/quiz/LiveQuizDashboard';
+import { getCattleOwnerFieldForQuestion } from '@/lib/submission/cattleOwnerHelpers';
 
 function renderSingleFileCard(val: any, idx?: number) {
   const isImg =
@@ -190,6 +191,11 @@ export default function ResponsesTab({
   const [isLoading, setIsLoading] = useState(true);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string>('');
   const [individualIndex, setIndividualIndex] = useState(0);
+  const [selectedOwnerIndex, setSelectedOwnerIndex] = useState(0);
+
+  useEffect(() => {
+    setSelectedOwnerIndex(0);
+  }, [individualIndex]);
 
   // Manual grading state for quiz submissions
   const [editingScores, setEditingScores] = useState<Record<string, number>>({});
@@ -900,7 +906,15 @@ export default function ResponsesTab({
               {/* Answers for selected question */}
               {submissions.map((sub) => {
                 const answer = sub.answers.find((a: any) => a.questionId === selectedQuestionId);
-                if (!answer) return null;
+                const selectedQObj = analytics?.questionAnalytics?.find(
+                  (q: any) => q.questionId === selectedQuestionId
+                );
+                const ownerField = getCattleOwnerFieldForQuestion(selectedQObj || answer?.question);
+                const hasMultiOwners = Boolean(
+                  ownerField && sub.cattleOwners && sub.cattleOwners.length > 0
+                );
+
+                if (!answer && !hasMultiOwners) return null;
 
                 return (
                   <div
@@ -920,7 +934,28 @@ export default function ResponsesTab({
                         ) : null}
                       </p>
                       <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                        {renderAnswerValue(answer.value)}
+                        {hasMultiOwners ? (
+                          <div className="space-y-1.5 pt-1">
+                            {sub.cattleOwners.map((owner: any, oIdx: number) => {
+                              const displayNum =
+                                owner.orderIndex !== undefined ? owner.orderIndex + 1 : oIdx + 1;
+                              const val = (owner as any)[ownerField!];
+                              return (
+                                <div key={owner.id || oIdx} className="text-xs flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold px-2 py-0.5 rounded bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-900/50">
+                                    Cattle Owner {displayNum}
+                                    {owner.ownerName ? ` (${owner.ownerName})` : ''}:
+                                  </span>
+                                  <span className="font-medium text-gray-800 dark:text-gray-200">
+                                    {renderAnswerValue(val)}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          renderAnswerValue(answer?.value)
+                        )}
                       </div>
                     </div>
 
@@ -1059,52 +1094,155 @@ export default function ResponsesTab({
                 </div>
 
                 {/* Repeatable Cattle Owners Viewer */}
-                {submissions[individualIndex].cattleOwners && submissions[individualIndex].cattleOwners.length > 0 && (
-                  <div className="space-y-3 p-4 rounded-xl border border-sky-200 dark:border-sky-900/50 bg-sky-50/50 dark:bg-sky-950/20">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-sky-900 dark:text-sky-200 flex items-center gap-2">
-                        <Users className="h-4 w-4 text-sky-600" />
-                        <span>Registered Cattle Owners ({submissions[individualIndex].cattleOwners.length}) – પશુપાલકોની વિગતો</span>
-                      </h4>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {submissions[individualIndex].cattleOwners.map((owner: any, oIdx: number) => (
-                        <div
-                          key={owner.id || oIdx}
-                          className="p-3.5 rounded-lg border border-sky-100 dark:border-sky-900/40 bg-white dark:bg-gray-900 space-y-2 shadow-xs"
-                        >
-                          <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-1.5">
-                            <span className="text-xs font-bold text-sky-700 dark:text-sky-300">
-                              Cattle Owner {owner.orderIndex !== undefined ? owner.orderIndex + 1 : oIdx + 1}
-                            </span>
-                            <span className="text-[11px] font-mono text-gray-500">{owner.ownerMobile}</span>
+                {(() => {
+                  const subCattleOwners = submissions[individualIndex]?.cattleOwners || [];
+                  if (subCattleOwners.length === 0) return null;
+
+                  const safeOwnerIndex = Math.min(
+                    Math.max(0, selectedOwnerIndex),
+                    subCattleOwners.length - 1
+                  );
+                  const activeOwner = subCattleOwners[safeOwnerIndex] || subCattleOwners[0];
+
+                  return (
+                    <div className="space-y-4 p-5 rounded-2xl border border-sky-200 dark:border-sky-900/60 bg-sky-50/40 dark:bg-sky-950/20 shadow-xs">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-sky-100 dark:border-sky-900/50 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-lg bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 flex items-center justify-center">
+                            <Users className="h-4 w-4" />
                           </div>
-                          <div className="text-xs space-y-1">
-                            <p><span className="text-gray-500">Full Name:</span> <strong className="text-gray-900 dark:text-gray-100">{owner.ownerName}</strong></p>
-                            <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] text-gray-600 dark:text-gray-300">
-                              <div><span className="text-gray-400">Large Cattle:</span> <strong className="text-gray-800 dark:text-gray-200">{owner.largeCattleCount}</strong></div>
-                              <div><span className="text-gray-400">Small Cattle:</span> <strong className="text-gray-800 dark:text-gray-200">{owner.smallCattleCount}</strong></div>
-                              <div><span className="text-gray-400">Flooring:</span> <strong className="text-gray-800 dark:text-gray-200">{owner.flooringType}</strong></div>
-                              <div><span className="text-gray-400">Supply Dung:</span> <strong className="text-gray-800 dark:text-gray-200">{owner.supplyDung}</strong></div>
+                          <div>
+                            <h4 className="text-xs font-bold text-sky-950 dark:text-sky-100 flex items-center gap-2">
+                              <span>Registered Cattle Owners ({subCattleOwners.length}) – પશુપાલકોની વિગતો</span>
+                            </h4>
+                            <p className="text-[11px] text-sky-700/70 dark:text-sky-300/70">
+                              Select an owner to view complete details
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-semibold text-sky-800 dark:text-sky-300 bg-sky-100/80 dark:bg-sky-900/40 px-2.5 py-1 rounded-full self-start sm:self-auto">
+                          Showing Owner {safeOwnerIndex + 1} of {subCattleOwners.length}
+                        </span>
+                      </div>
+
+                      {/* Owner Selection Tabs / Buttons */}
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                        {subCattleOwners.map((owner: any, oIdx: number) => {
+                          const isSelected = oIdx === safeOwnerIndex;
+                          const displayNum =
+                            owner.orderIndex !== undefined ? owner.orderIndex + 1 : oIdx + 1;
+                          return (
+                            <button
+                              key={owner.id || oIdx}
+                              type="button"
+                              onClick={() => setSelectedOwnerIndex(oIdx)}
+                              className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 border cursor-pointer shrink-0 ${
+                                isSelected
+                                  ? 'bg-sky-600 text-white border-sky-600 shadow-sm ring-2 ring-sky-300/50 dark:ring-sky-700/50'
+                                  : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800 hover:bg-sky-50 dark:hover:bg-sky-950/30'
+                              }`}
+                            >
+                              <Users className={`h-3.5 w-3.5 ${isSelected ? 'text-white' : 'text-sky-600'}`} />
+                              <span>Cattle Owner {displayNum}</span>
+                              {owner.ownerName && (
+                                <span
+                                  className={`text-[11px] font-medium truncate max-w-[140px] ${
+                                    isSelected ? 'text-sky-100' : 'text-gray-400'
+                                  }`}
+                                >
+                                  • {owner.ownerName}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Selected Owner Detail Card */}
+                      {activeOwner && (
+                        <div className="p-4 rounded-xl border border-sky-200 dark:border-sky-900/60 bg-white dark:bg-gray-900 shadow-sm space-y-3">
+                          <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-2.5 flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold px-2 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300">
+                                Cattle Owner {safeOwnerIndex + 1}
+                              </span>
+                              <span className="text-xs font-bold text-gray-900 dark:text-gray-100">
+                                {activeOwner.ownerName || (
+                                  <span className="text-gray-400 italic">No name provided</span>
+                                )}
+                              </span>
+                            </div>
+                            {activeOwner.ownerMobile && (
+                              <div className="text-[11px] font-mono font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 px-2.5 py-0.5 rounded-full border border-gray-200 dark:border-gray-700">
+                                📱 {activeOwner.ownerMobile}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                            <div className="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800">
+                              <span className="text-[11px] text-gray-400 block">Large Cattle (મોટા પશુ)</span>
+                              <strong className="text-sm font-extrabold text-gray-900 dark:text-gray-100">
+                                {activeOwner.largeCattleCount ?? 0}
+                              </strong>
+                            </div>
+                            <div className="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800">
+                              <span className="text-[11px] text-gray-400 block">Small Cattle (નાના પશુ)</span>
+                              <strong className="text-sm font-extrabold text-gray-900 dark:text-gray-100">
+                                {activeOwner.smallCattleCount ?? 0}
+                              </strong>
+                            </div>
+                            <div className="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800">
+                              <span className="text-[11px] text-gray-400 block">Flooring (ભોંયતળિયું)</span>
+                              <strong className="text-xs font-bold text-gray-900 dark:text-gray-100">
+                                {activeOwner.flooringType || '—'}
+                              </strong>
+                            </div>
+                            <div className="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800">
+                              <span className="text-[11px] text-gray-400 block">Supply Dung (છાણ સંમતિ)</span>
+                              <strong className="text-xs font-bold text-gray-900 dark:text-gray-100">
+                                {activeOwner.supplyDung || '—'}
+                              </strong>
                             </div>
                           </div>
                         </div>
-                      ))}
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Answers List */}
                 <div className="space-y-4">
-                  {submissions[individualIndex].answers.map((ans: any) => (
-                    <div
-                      key={ans.id}
-                      className="p-4 rounded-xl bg-gray-50/70 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800 space-y-2"
-                    >
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <h5 className="font-semibold text-xs text-gray-700 dark:text-gray-300 flex-1">
-                          {ans.question?.title || 'Question'}
-                        </h5>
+                  {(() => {
+                    const subCattleOwners = submissions[individualIndex]?.cattleOwners || [];
+                    const safeOwnerIndex = Math.min(
+                      Math.max(0, selectedOwnerIndex),
+                      Math.max(0, subCattleOwners.length - 1)
+                    );
+                    const activeOwner =
+                      subCattleOwners.length > 0 ? subCattleOwners[safeOwnerIndex] : null;
+
+                    return submissions[individualIndex].answers.map((ans: any) => {
+                      const ownerField = activeOwner
+                        ? getCattleOwnerFieldForQuestion(ans.question)
+                        : null;
+                      const displayVal =
+                        ownerField && activeOwner ? activeOwner[ownerField] : ans.value;
+
+                      return (
+                        <div
+                          key={ans.id}
+                          className="p-4 rounded-xl bg-gray-50/70 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800 space-y-2"
+                        >
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <h5 className="font-semibold text-xs text-gray-700 dark:text-gray-300 flex-1">
+                              {ans.question?.title || 'Question'}
+                              {ownerField && subCattleOwners.length > 1 && (
+                                <span className="text-[10px] text-sky-600 dark:text-sky-400 font-semibold ml-2">
+                                  (Cattle Owner {safeOwnerIndex + 1})
+                                </span>
+                              )}
+                            </h5>
                         {isQuiz && (
                           <div className="flex items-center gap-1.5 shrink-0">
                             <span className="text-[11px] text-gray-400">Points:</span>
@@ -1127,7 +1265,7 @@ export default function ResponsesTab({
                         )}
                       </div>
                       <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                        {renderAnswerValue(ans.value)}
+                        {renderAnswerValue(displayVal)}
                       </div>
 
                       {/* Reviewer Feedback Input */}
@@ -1149,7 +1287,9 @@ export default function ResponsesTab({
                         </div>
                       )}
                     </div>
-                  ))}
+                  );
+                });
+              })()}
 
                   {/* Manual Grade Save Bar */}
                   {isQuiz && (
