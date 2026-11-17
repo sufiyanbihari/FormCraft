@@ -197,6 +197,72 @@ export async function PATCH(
 
     const { title, description, status, isQuiz, theme, settings } = result.data;
 
+    const existingForm = await prisma.form.findUnique({
+      where: { id },
+      include: { settings: true, theme: true },
+    });
+    if (!existingForm) {
+      return NextResponse.json({ error: 'Form not found' }, { status: 404 });
+    }
+
+    // Compute before & after change tracking
+    const changes: Array<{ field: string; label: string; before: any; after: any }> = [];
+    if (title !== undefined && title !== existingForm.title) {
+      changes.push({ field: 'title', label: 'Form Title', before: existingForm.title, after: title });
+    }
+    if (description !== undefined && description !== (existingForm.description || '')) {
+      changes.push({ field: 'description', label: 'Form Description', before: existingForm.description || '', after: description });
+    }
+    if (status !== undefined && status !== existingForm.status) {
+      changes.push({ field: 'status', label: 'Form Status', before: existingForm.status, after: status });
+    }
+    if (isQuiz !== undefined && isQuiz !== existingForm.isQuiz) {
+      changes.push({ field: 'isQuiz', label: 'Quiz Mode', before: existingForm.isQuiz, after: isQuiz });
+    }
+
+    let isClosed = false;
+    let isReopened = false;
+
+    if (settings) {
+      const prevSettings = existingForm.settings || ({} as any);
+      if (settings.isAcceptingResponses !== undefined) {
+        const prevAccepting = prevSettings.isAcceptingResponses ?? true;
+        if (prevAccepting !== settings.isAcceptingResponses) {
+          changes.push({
+            field: 'isAcceptingResponses',
+            label: 'Accepting Responses',
+            before: prevAccepting,
+            after: settings.isAcceptingResponses,
+          });
+          if (!settings.isAcceptingResponses && prevAccepting) {
+            isClosed = true;
+          } else if (settings.isAcceptingResponses && !prevAccepting) {
+            isReopened = true;
+          }
+        }
+      }
+
+      const settingLabels: Record<string, string> = {
+        confirmationMessage: 'Confirmation Message',
+        showProgressBar: 'Progress Bar',
+        allowMultipleSubmissions: 'Allow Multiple Submissions',
+        quizTimerMode: 'Quiz Timer Mode',
+        quizDurationMinutes: 'Quiz Duration',
+        quizQuestionTimeLimitSeconds: 'Per-Question Time Limit',
+        quizDefaultPoints: 'Default Points per Question',
+      };
+
+      for (const [key, label] of Object.entries(settingLabels)) {
+        if ((settings as any)[key] !== undefined) {
+          const prevVal = (prevSettings as any)[key];
+          const newVal = (settings as any)[key];
+          if (prevVal !== newVal) {
+            changes.push({ field: key, label, before: prevVal ?? null, after: newVal });
+          }
+        }
+      }
+    }
+
     const updatedForm = await prisma.$transaction(async (tx) => {
       const formUpdateData: any = {};
       if (title !== undefined) formUpdateData.title = title;
@@ -313,16 +379,6 @@ export async function PATCH(
         });
       }
 
-      // Record audit log
-      await tx.formAuditLog.create({
-        data: {
-          formId: id,
-          userId: user.id,
-          action: 'UPDATE_FORM',
-          details: { updatedFields: Object.keys(body) },
-        },
-      });
-
       const reloadedForm = await tx.form.findUnique({
         where: { id },
         include: { settings: true, theme: true },
@@ -331,33 +387,47 @@ export async function PATCH(
       return reloadedForm || form;
     });
 
-    const isClosed = settings && settings.isAcceptingResponses === false;
-    const isReopened = settings && settings.isAcceptingResponses === true;
-    const actionName = isClosed ? 'FORM_CLOSED' : 'FORM_UPDATE';
+    if (changes.length > 0) {
+      let actionName = 'FORM_UPDATE';
+      let summary = `Made changes in form "${updatedForm.title}" (${changes.map((c) => c.label).join(', ')})`;
 
-    await logActivity({
-      action: actionName,
-      category: 'FORM',
-      status: 'SUCCESS',
-      formId: id,
-      formTitle: updatedForm.title,
-      userId: user.id,
-      userEmail: user.email,
-      userName: user.name,
-      userRole: user.role,
-      req: request,
-      details: {
-        updatedFields: Object.keys(body),
-        title: updatedForm.title,
-        status: updatedForm.status,
-        isAcceptingResponses: settings?.isAcceptingResponses,
-        summary: isClosed
-          ? `Closed form "${updatedForm.title}" from accepting responses`
-          : isReopened
-          ? `Reopened form "${updatedForm.title}" for responses`
-          : `Made changes in form "${updatedForm.title}" (${Object.keys(body).join(', ')})`,
-      },
-    });
+      if (isClosed) {
+        actionName = 'FORM_CLOSED';
+        summary = `Closed form "${updatedForm.title}" from accepting responses`;
+      } else if (isReopened) {
+        actionName = 'FORM_UPDATE';
+        summary = `Reopened form "${updatedForm.title}" for responses`;
+      }
+
+      const beforeMap = changes.reduce((acc, c) => ({ ...acc, [c.field]: c.before }), {});
+      const afterMap = changes.reduce((acc, c) => ({ ...acc, [c.field]: c.after }), {});
+
+      await logActivity({
+        action: actionName,
+        category: 'FORM',
+        status: 'SUCCESS',
+        formId: id,
+        formTitle: updatedForm.title,
+        publicId: updatedForm.publicId,
+        userId: user.id,
+        userEmail: user.email,
+        userName: user.name || user.email,
+        userRole: user.role,
+        req: request,
+        changes,
+        before: beforeMap,
+        after: afterMap,
+        details: {
+          updatedFields: changes.map((c) => c.field),
+          title: updatedForm.title,
+          status: updatedForm.status,
+          summary,
+          changes,
+          before: beforeMap,
+          after: afterMap,
+        },
+      });
+    }
 
     return NextResponse.json({ form: updatedForm });
   } catch (error: any) {

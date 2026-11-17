@@ -14,6 +14,7 @@ export interface TokenPayload {
   userId: string;
   email: string;
   role: string;
+  sessionId?: string;
 }
 
 export function signToken(payload: TokenPayload): string {

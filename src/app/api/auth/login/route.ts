@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { prisma } from '@/lib/db/prisma';
 import { loginSchema } from '@/lib/validation/authSchema';
 import { verifyPassword } from '@/lib/auth/password';
 import { signToken } from '@/lib/auth/jwt';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/session';
 import { logActivity } from '@/lib/audit/auditLogger';
+import { parseClientInfo } from '@/lib/auth/deviceParser';
+import { broadcastSessionEvent } from '@/lib/audit/auditEventBroker';
 
 export async function POST(request: NextRequest) {
   try {
+    const clientInfo = parseClientInfo(request);
     const body = await request.json();
     const result = loginSchema.safeParse(body);
 
@@ -35,6 +39,10 @@ export async function POST(request: NextRequest) {
         details: {
           reason: 'Account not found',
           summary: `Failed login attempt for ${email} (Account not found)`,
+          attemptedEmail: normalizedEmail,
+          deviceType: clientInfo.deviceType,
+          browser: clientInfo.browser,
+          os: clientInfo.os,
         },
       });
       return NextResponse.json(
@@ -51,12 +59,16 @@ export async function POST(request: NextRequest) {
         status: 'FAILED',
         userId: user.id,
         userEmail: user.email,
-        userName: user.name,
+        userName: user.name || user.email,
         userRole: user.role,
         req: request,
         details: {
           reason: 'Incorrect password',
           summary: `Failed login attempt for ${user.email} (Incorrect password)`,
+          attemptedEmail: user.email,
+          deviceType: clientInfo.deviceType,
+          browser: clientInfo.browser,
+          os: clientInfo.os,
         },
       });
       return NextResponse.json(
@@ -65,10 +77,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Create a new persistent session record in database
+    const sessionToken = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    const session = await prisma.session.create({
+      data: {
+        sessionToken,
+        userId: user.id,
+        userName: user.name || user.email,
+        userEmail: user.email,
+        userRole: user.role,
+        ipAddress: clientInfo.ipAddress,
+        userAgent: clientInfo.userAgent,
+        deviceType: clientInfo.deviceType,
+        browser: clientInfo.browser,
+        os: clientInfo.os,
+        status: 'ACTIVE',
+        loginAt: new Date(),
+        lastActiveAt: new Date(),
+        expiresAt,
+      },
+    });
+
     const token = signToken({
       userId: user.id,
       email: user.email,
       role: user.role,
+      sessionId: session.id,
     });
 
     await logActivity({
@@ -77,17 +113,41 @@ export async function POST(request: NextRequest) {
       status: 'SUCCESS',
       userId: user.id,
       userEmail: user.email,
-      userName: user.name,
+      userName: user.name || user.email,
       userRole: user.role,
+      sessionId: session.id,
       req: request,
       details: {
         role: user.role,
-        summary: `${user.name || user.email} signed in successfully`,
+        sessionId: session.id,
+        summary: `${user.name || user.email} signed in successfully from ${clientInfo.deviceType} (${clientInfo.browser})`,
+        deviceType: clientInfo.deviceType,
+        browser: clientInfo.browser,
+        os: clientInfo.os,
+      },
+    });
+
+    // Notify real-time subscribers of new active session
+    broadcastSessionEvent('SESSION_UPDATED', {
+      session: {
+        id: session.id,
+        userId: user.id,
+        userName: session.userName,
+        userEmail: session.userEmail,
+        userRole: session.userRole,
+        ipAddress: session.ipAddress,
+        deviceType: session.deviceType,
+        browser: session.browser,
+        os: session.os,
+        status: session.status,
+        loginAt: session.loginAt.toISOString(),
+        lastActiveAt: session.lastActiveAt.toISOString(),
       },
     });
 
     const response = NextResponse.json({
       message: 'Login successful',
+      sessionId: session.id,
       user: {
         id: user.id,
         email: user.email,

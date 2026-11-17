@@ -15,14 +15,6 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '10gb',
     },
   },
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
 };
 
 export default nextConfig;

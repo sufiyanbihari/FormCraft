@@ -11,6 +11,7 @@ export interface AuthUser {
   name: string | null;
   role: 'USER' | 'ADMIN';
   avatarUrl: string | null;
+  sessionId?: string | null;
 }
 
 export async function getCurrentUser(): Promise<AuthUser | null> {
@@ -23,6 +24,16 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     const payload = verifyToken(token);
     if (!payload?.userId) return null;
 
+    if (payload.sessionId) {
+      const dbSession = await prisma.session.findUnique({
+        where: { id: payload.sessionId },
+        select: { id: true, status: true },
+      });
+      if (dbSession && (dbSession.status === 'TERMINATED' || dbSession.status === 'LOGGED_OUT')) {
+        return null;
+      }
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
       select: {
@@ -34,7 +45,12 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
       },
     });
 
-    return user as AuthUser | null;
+    if (!user) return null;
+
+    return {
+      ...user,
+      sessionId: payload.sessionId || null,
+    } as AuthUser;
   } catch {
     return null;
   }
@@ -56,6 +72,16 @@ export async function getAuthUserFromRequest(request: NextRequest): Promise<Auth
     const payload = verifyToken(token);
     if (!payload?.userId) return null;
 
+    if (payload.sessionId) {
+      const dbSession = await prisma.session.findUnique({
+        where: { id: payload.sessionId },
+        select: { id: true, status: true },
+      });
+      if (dbSession && (dbSession.status === 'TERMINATED' || dbSession.status === 'LOGGED_OUT')) {
+        return null;
+      }
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
       select: {
@@ -67,7 +93,12 @@ export async function getAuthUserFromRequest(request: NextRequest): Promise<Auth
       },
     });
 
-    return user as AuthUser | null;
+    if (!user) return null;
+
+    return {
+      ...user,
+      sessionId: payload.sessionId || null,
+    } as AuthUser;
   } catch {
     return null;
   }

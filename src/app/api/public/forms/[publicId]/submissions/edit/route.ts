@@ -499,11 +499,17 @@ export async function PUT(
       userName: authenticatedUser?.name,
       userRole: authenticatedUser?.role,
       req: request,
+      changes: [
+        { field: 'editCount', label: 'Response Revision', before: `#${submission.editCount || 0}`, after: `#${updatedSubmission.editCount}` },
+      ],
+      before: { editCount: submission.editCount || 0 },
+      after: { editCount: updatedSubmission.editCount },
       details: {
         submissionId: submission.id,
         editCount: updatedSubmission.editCount,
         actorType: eligibility.actorType,
         answerCount: validatedData.answers.length,
+        summary: `Respondent updated submitted response (#${updatedSubmission.editCount}) for "${form.title}"`,
       },
     });
 

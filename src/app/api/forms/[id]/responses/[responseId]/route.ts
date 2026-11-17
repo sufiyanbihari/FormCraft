@@ -86,13 +86,18 @@ export async function DELETE(
       publicId: form?.publicId,
       userId: user.id,
       userEmail: user.email,
-      userName: user.name,
+      userName: user.name || user.email,
       userRole: user.role,
       req: request,
+      changes: [
+        { field: 'submission', label: 'Response', before: `Response #${responseId.slice(-6)} (${submission?.respondentEmail || 'Anonymous'})`, after: '(Deleted)' },
+      ],
+      before: { submissionId: responseId, respondentEmail: submission?.respondentEmail },
+      after: null,
       details: {
         submissionId: responseId,
         respondentEmail: submission?.respondentEmail || 'Anonymous',
-        description: `Deleted response #${responseId.slice(-6)} from form "${form?.title || 'Untitled Form'}"`,
+        summary: `Deleted response #${responseId.slice(-6)} from form "${form?.title || 'Untitled Form'}"`,
       },
     });
 

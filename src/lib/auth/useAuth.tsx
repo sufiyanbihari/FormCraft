@@ -54,6 +54,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     fetchUser();
   }, []);
 
+  // Heartbeat mechanism: periodically sends keepalive every 25 seconds while logged in
+  useEffect(() => {
+    if (!user) return;
+
+    const sendHeartbeat = async () => {
+      try {
+        const res = await fetch('/api/auth/heartbeat', { method: 'POST' });
+        if (res.status === 401) {
+          const data = await res.json().catch(() => ({}));
+          if (data.status === 'TERMINATED') {
+            setUser(null);
+            router.push('/login?reason=session_terminated');
+          }
+        }
+      } catch {
+        // network error / offline
+      }
+    };
+
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 25000);
+
+    const handleFocus = () => {
+      sendHeartbeat();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        sendHeartbeat();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [user, router]);
+
   const login = async (email: string, password: string) => {
     try {
       const res = await fetch('/api/auth/login', {

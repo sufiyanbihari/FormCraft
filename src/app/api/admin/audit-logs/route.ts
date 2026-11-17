@@ -3,8 +3,11 @@ import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import { getAuthUserFromRequest } from '@/lib/auth/session';
 import { verifyAuditAuthFromRequest } from '@/lib/auth/auditAuth';
+import { logActivity } from '@/lib/audit/auditLogger';
+import { getSessionInactivityTimeoutMs } from '@/lib/auth/sessionConfig';
 
 export async function GET(request: NextRequest) {
+  const INACTIVITY_TIMEOUT_MS = getSessionInactivityTimeoutMs();
   try {
     const user = await getAuthUserFromRequest(request);
     if (!user) {
@@ -68,7 +71,8 @@ export async function GET(request: NextRequest) {
         l.details->>'userName' ILIKE ${pattern} OR
         l.details->>'formTitle' ILIKE ${pattern} OR
         l.details->>'summary' ILIKE ${pattern} OR
-        l.details->>'ipAddress' ILIKE ${pattern}
+        l.details->>'ipAddress' ILIKE ${pattern} OR
+        l.details->>'sessionId' ILIKE ${pattern}
       )`);
     }
 
@@ -131,22 +135,36 @@ export async function GET(request: NextRequest) {
     // Calculate system-wide KPIs
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const cutoff = new Date(now.getTime() - INACTIVITY_TIMEOUT_MS);
 
-    const [allLogsCountRes, todayCountRes, distinctUsersRes, securityCountRes] = await Promise.all([
+    const [allLogsCountRes, todayCountRes, activeSessionsCount, securityCountRes] = await Promise.all([
       prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*)::int as count FROM form_audit_logs;`,
       prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(*)::int as count FROM form_audit_logs WHERE "createdAt" >= ${startOfToday};`,
-      prisma.$queryRaw<Array<{ count: number }>>`SELECT COUNT(DISTINCT "userId")::int as count FROM form_audit_logs WHERE "userId" IS NOT NULL;`,
+      // Authoritative count of currently active login sessions within inactivity window
+      prisma.session.count({
+        where: {
+          status: 'ACTIVE',
+          lastActiveAt: { gte: cutoff },
+          expiresAt: { gt: now },
+        },
+      }),
       prisma.$queryRaw<Array<{ count: number }>>`
         SELECT COUNT(*)::int as count
         FROM form_audit_logs
         WHERE details->>'status' = 'FAILED'
            OR details->>'category' = 'SECURITY'
-           OR action ILIKE '%FAILED%';
+           OR action ILIKE '%FAILED%'
+           OR action ILIKE '%TERMINATE%';
       `,
     ]);
 
     const formattedLogs = rawRows.map((row) => {
       const details = (row.details as Record<string, any>) || {};
+      const resolvedName =
+        row.userName ||
+        details.userName ||
+        (row.userId ? row.userEmail || details.userEmail : 'Anonymous Respondent');
+
       return {
         id: row.id,
         action: row.action,
@@ -157,9 +175,9 @@ export async function GET(request: NextRequest) {
         userAgent: details.userAgent || 'Direct / API',
         user: {
           id: row.userId,
-          name: row.userName || details.userName || 'Anonymous Respondent',
+          name: resolvedName,
           email: row.userEmail || details.userEmail || null,
-          role: row.userRole || details.userRole || null,
+          role: row.userRole || details.userRole || (row.userId ? 'ADMIN' : null),
           avatarUrl: row.userAvatarUrl || null,
         },
         form: {
@@ -183,7 +201,7 @@ export async function GET(request: NextRequest) {
       stats: {
         totalLogs: allLogsCountRes[0]?.count || 0,
         todayLogs: todayCountRes[0]?.count || 0,
-        activeUsersCount: distinctUsersRes[0]?.count || 0,
+        activeUsersCount: activeSessionsCount,
         securityAlertsCount: securityCountRes[0]?.count || 0,
       },
     });
@@ -217,7 +235,24 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // 1. Delete existing audit history (does NOT touch active sessions)
     const result = await prisma.formAuditLog.deleteMany({});
+
+    // 2. Immediately record who reset the logs and when for permanent compliance tracking
+    await logActivity({
+      action: 'SYSTEM_LOGS_RESET',
+      category: 'SECURITY',
+      status: 'WARNING',
+      userId: user.id,
+      userEmail: user.email,
+      userName: user.name || user.email,
+      userRole: user.role,
+      req: request,
+      details: {
+        clearedRecordsCount: result.count,
+        summary: `Administrator ${user.name || user.email} reset and cleared ${result.count} audit log records.`,
+      },
+    });
 
     return NextResponse.json({
       success: true,

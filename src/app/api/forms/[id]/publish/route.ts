@@ -179,6 +179,8 @@ export async function POST(
       return { form: updatedForm, version };
     });
 
+    const isRepublish = nextVersionNumber > 1 || form.status === 'PUBLISHED';
+
     await logActivity({
       action: 'FORM_PUBLISH',
       category: 'FORM',
@@ -188,18 +190,24 @@ export async function POST(
       publicId: result.form.publicId,
       userId: user.id,
       userEmail: user.email,
-      userName: user.name,
+      userName: user.name || user.email,
       userRole: user.role,
       req: request,
+      changes: [
+        { field: 'status', label: 'Form Status', before: form.status, after: 'PUBLISHED' },
+        { field: 'version', label: 'Published Version', before: form.publishedVersionId || 'None', after: `Version #${result.version.versionNumber}` },
+      ],
+      before: { status: form.status, versionNumber: form.publishedVersionId || 0 },
+      after: { status: 'PUBLISHED', versionNumber: result.version.versionNumber },
       details: {
         versionNumber: result.version.versionNumber,
         versionId: result.version.id,
+        isRepublish,
         publicUrl: `/f/${result.form.publicId}`,
-        summary: `Published version #${result.version.versionNumber} of "${result.form.title}"`,
+        summary: `${isRepublish ? 'Republished' : 'Published'} version #${result.version.versionNumber} of "${result.form.title}"`,
       },
     });
 
-    const isRepublish = nextVersionNumber > 1 || form.status === 'PUBLISHED';
     const message = isRepublish ? 'Form republished successfully' : 'Form published successfully';
 
     return NextResponse.json({

@@ -61,7 +61,8 @@ export async function GET(request: NextRequest) {
         l.details->>'userName' ILIKE ${pattern} OR
         l.details->>'formTitle' ILIKE ${pattern} OR
         l.details->>'summary' ILIKE ${pattern} OR
-        l.details->>'ipAddress' ILIKE ${pattern}
+        l.details->>'ipAddress' ILIKE ${pattern} OR
+        l.details->>'sessionId' ILIKE ${pattern}
       )`);
     }
 
@@ -112,24 +113,39 @@ export async function GET(request: NextRequest) {
       'Actor Name',
       'Actor Email',
       'Actor Role',
+      'Session ID',
       'Form Title',
       'Form ID',
+      'Device',
+      'Browser',
+      'OS',
       'IP Address',
       'User Agent',
+      'Summary',
+      'Before / After Changes',
       'Details (JSON)',
     ];
 
     const rows = rawRows.map((log) => {
       const details = (log.details as Record<string, any>) || {};
-      const actorName = log.userName || details.userName || 'Anonymous Respondent';
+      const actorName =
+        log.userName ||
+        details.userName ||
+        (log.userId ? log.userEmail || details.userEmail : 'Anonymous Respondent');
       const actorEmail = log.userEmail || details.userEmail || 'N/A';
-      const actorRole = log.userRole || details.userRole || 'ANONYMOUS';
+      const actorRole = log.userRole || details.userRole || (log.userId ? 'ADMIN' : 'ANONYMOUS');
+      const sessionId = details.sessionId || 'N/A';
       const formTitle = log.formTitle || details.formTitle || 'N/A';
       const formId = log.formId || details.deletedFormId || 'N/A';
+      const device = details.deviceType || 'N/A';
+      const browser = details.browser || 'N/A';
+      const os = details.os || 'N/A';
       const ipAddress = details.ipAddress || '127.0.0.1';
       const userAgent = details.userAgent || 'Direct';
       const categoryVal = details.category || 'FORM';
       const statusVal = details.status || 'SUCCESS';
+      const summaryVal = details.summary || '';
+      const changesVal = details.changes ? JSON.stringify(details.changes) : '';
 
       return [
         log.id,
@@ -140,10 +156,16 @@ export async function GET(request: NextRequest) {
         actorName,
         actorEmail,
         actorRole,
+        sessionId,
         formTitle,
         formId,
+        device,
+        browser,
+        os,
         ipAddress,
         userAgent,
+        summaryVal,
+        changesVal,
         JSON.stringify(details),
       ];
     });

@@ -21,6 +21,11 @@ export async function POST(
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
+    const prevForm = await prisma.form.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+
     const form = await prisma.form.update({
       where: { id },
       data: { status: 'DRAFT' },
@@ -35,9 +40,14 @@ export async function POST(
       publicId: form.publicId,
       userId: user.id,
       userEmail: user.email,
-      userName: user.name,
+      userName: user.name || user.email,
       userRole: user.role,
       req: request,
+      changes: [
+        { field: 'status', label: 'Form Status', before: prevForm?.status || 'PUBLISHED', after: 'DRAFT' },
+      ],
+      before: { status: prevForm?.status || 'PUBLISHED' },
+      after: { status: 'DRAFT' },
       details: {
         status: 'DRAFT',
         actionType: 'UNPUBLISH',

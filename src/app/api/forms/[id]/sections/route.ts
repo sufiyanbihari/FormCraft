@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { getAuthUserFromRequest } from '@/lib/auth/session';
 import { getUserFormRole, canEditForm } from '@/lib/auth/rbac';
 import { createSectionSchema } from '@/lib/validation/formSchema';
+import { logActivity } from '@/lib/audit/auditLogger';
 
 export async function POST(
   request: NextRequest,
@@ -52,6 +53,29 @@ export async function POST(
         questions: {
           include: { options: true },
         },
+      },
+    });
+
+    await logActivity({
+      action: 'SECTION_CREATE',
+      category: 'QUESTION',
+      status: 'SUCCESS',
+      formId: id,
+      userId: user.id,
+      userEmail: user.email,
+      userName: user.name || user.email,
+      userRole: user.role,
+      req: request,
+      changes: [
+        { field: 'section', label: 'Section', before: '(None)', after: section.title },
+      ],
+      before: null,
+      after: { title: section.title, orderIndex: section.orderIndex },
+      details: {
+        sectionId: section.id,
+        sectionTitle: section.title,
+        orderIndex: section.orderIndex,
+        summary: `Created section "${section.title}"`,
       },
     });
 
