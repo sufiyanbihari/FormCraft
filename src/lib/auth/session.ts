@@ -27,9 +27,9 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     if (payload.sessionId) {
       const dbSession = await prisma.session.findUnique({
         where: { id: payload.sessionId },
-        select: { id: true, status: true },
+        select: { id: true, status: true, expiresAt: true },
       });
-      if (dbSession && (dbSession.status === 'TERMINATED' || dbSession.status === 'LOGGED_OUT')) {
+      if (!dbSession || dbSession.status === 'TERMINATED' || dbSession.status === 'LOGGED_OUT' || dbSession.expiresAt <= new Date()) {
         return null;
       }
     }
@@ -75,9 +75,9 @@ export async function getAuthUserFromRequest(request: NextRequest): Promise<Auth
     if (payload.sessionId) {
       const dbSession = await prisma.session.findUnique({
         where: { id: payload.sessionId },
-        select: { id: true, status: true },
+        select: { id: true, status: true, expiresAt: true },
       });
-      if (dbSession && (dbSession.status === 'TERMINATED' || dbSession.status === 'LOGGED_OUT')) {
+      if (!dbSession || dbSession.status === 'TERMINATED' || dbSession.status === 'LOGGED_OUT' || dbSession.expiresAt <= new Date()) {
         return null;
       }
     }

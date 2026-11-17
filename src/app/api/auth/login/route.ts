@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create a new persistent session record in database
+    // Create a new persistent session record in database (strictly required for valid login)
     const sessionToken = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
@@ -132,14 +132,14 @@ export async function POST(request: NextRequest) {
       session: {
         id: session.id,
         userId: user.id,
-        userName: session.userName,
-        userEmail: session.userEmail,
-        userRole: session.userRole,
-        ipAddress: session.ipAddress,
-        deviceType: session.deviceType,
-        browser: session.browser,
-        os: session.os,
-        status: session.status,
+        userName: session.userName || user.name || user.email,
+        userEmail: session.userEmail || user.email,
+        userRole: session.userRole || user.role,
+        ipAddress: session.ipAddress || clientInfo.ipAddress,
+        deviceType: session.deviceType || clientInfo.deviceType,
+        browser: session.browser || clientInfo.browser,
+        os: session.os || clientInfo.os,
+        status: session.status || 'ACTIVE',
         loginAt: session.loginAt.toISOString(),
         lastActiveAt: session.lastActiveAt.toISOString(),
       },

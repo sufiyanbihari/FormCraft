@@ -10,7 +10,8 @@
     "lint": "eslint",
     "storage:migrate": "tsx scripts/migrate-to-storage.ts",
     "test:storage": "tsx tests/test_upload_size_and_storage.ts",
-    "db:migrate:quiz": "tsx scripts/migrate_quiz_schema.ts"
+    "db:migrate:quiz": "tsx scripts/migrate_quiz_schema.ts",
+    "db:migrate:session": "tsx scripts/migrate_session_schema.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
